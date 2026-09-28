@@ -130,8 +130,9 @@ class User {
         rawName.toLowerCase().replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '');
 
     return User(
-      id: json['id'] as String? ?? json['uid'] as String? ?? '',
+      id: json['id'] as String? ?? json['uid'] as String? ?? json['_id']?.toString() ?? '',
       username: uname.isEmpty ? 'user' : uname,
+
       name: rawName,
       firstName: fName,
       lastName: lName,

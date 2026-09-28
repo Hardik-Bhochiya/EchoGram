@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/chat_provider.dart';
 import '../../services/friendship_service.dart';
 import '../chat/chat_conversation_screen.dart';
+
 
 class UserProfileScreen extends StatefulWidget {
   final User user;
@@ -222,15 +224,74 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   }
 
   void _openDirectChat() {
+    final auth = context.read<AuthProvider>();
+    final currentUser = auth.currentUser;
+    if (currentUser == null) return;
+    final chatProvider = context.read<ChatProvider>();
+    final room = chatProvider.startPersonalChat(peerUser: widget.user, currentUser: currentUser);
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => ChatConversationScreen(
-          roomId: 'dm_${widget.user.id}',
+          roomId: room.id,
         ),
       ),
     );
   }
+
+  Future<void> _handleUnfriend() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF161B22),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Color(0xFF30363D)),
+        ),
+        title: const Text('Unfriend User', style: TextStyle(color: Color(0xFFF0F6FC), fontWeight: FontWeight.bold)),
+        content: Text('Are you sure you want to unfriend @${widget.user.username}?', style: const TextStyle(color: Color(0xFF8B949E))),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: Color(0xFF8B949E))),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFDA3633),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Unfriend'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+
+    final auth = context.read<AuthProvider>();
+
+    setState(() => _isActionInProgress = true);
+    try {
+      await auth.unfriend(widget.user.username);
+      if (mounted) {
+        setState(() {
+          _relationshipState = RelationshipState.none;
+          _isActionInProgress = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFF21262D),
+            content: Text('Unfriended @${widget.user.username}.'),
+          ),
+        );
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isActionInProgress = false);
+    }
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -398,20 +459,43 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
         return const SizedBox.shrink();
 
       case RelationshipState.friends:
-        return SizedBox(
-          width: double.infinity,
-          height: 44,
-          child: ElevatedButton.icon(
-            onPressed: _openDirectChat,
-            icon: const Icon(Icons.chat_bubble_rounded, size: 18),
-            label: const Text('Send Message', style: TextStyle(fontWeight: FontWeight.bold)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF238636),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        return Row(
+          children: [
+            Expanded(
+              flex: 3,
+              child: SizedBox(
+                height: 44,
+                child: ElevatedButton.icon(
+                  onPressed: _openDirectChat,
+                  icon: const Icon(Icons.chat_bubble_rounded, size: 18),
+                  label: const Text('Send Message', style: TextStyle(fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF238636),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
             ),
-          ),
+            const SizedBox(width: 10),
+            Expanded(
+              flex: 2,
+              child: SizedBox(
+                height: 44,
+                child: OutlinedButton.icon(
+                  onPressed: _handleUnfriend,
+                  icon: const Icon(Icons.person_remove_rounded, size: 17, color: Color(0xFFF85149)),
+                  label: const Text('Unfriend', style: TextStyle(color: Color(0xFFF85149), fontWeight: FontWeight.bold)),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Color(0xFFDA3633), width: 1.2),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+            ),
+          ],
         );
+
 
       case RelationshipState.pendingOutgoing:
         return SizedBox(

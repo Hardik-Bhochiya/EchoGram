@@ -1,7 +1,9 @@
 const store = require('./store');
 const { v4: uuidv4 } = require('uuid');
+const User = require('../models/User');
+const { isConnected } = require('../config/db');
 
-exports.sendFriendRequest = (req, res) => {
+exports.sendFriendRequest = async (req, res) => {
   const { senderId, senderUsername, senderName, senderAvatar, receiverUsername } = req.body;
 
   if (!senderUsername || !receiverUsername) {
@@ -15,7 +17,20 @@ exports.sendFriendRequest = (req, res) => {
     return res.status(400).json({ error: 'Cannot send friend request to yourself' });
   }
 
-  const targetUser = store.users.find((u) => u.username.toLowerCase() === rUser);
+  let targetUser = store.users.find((u) => u.username.toLowerCase() === rUser);
+  if (!targetUser && isConnected()) {
+    try {
+      const dbUser = await User.findOne({ username: rUser });
+      if (dbUser) {
+        targetUser = {
+          id: dbUser._id.toString(),
+          username: dbUser.username,
+          name: dbUser.name,
+        };
+      }
+    } catch (_) {}
+  }
+
   if (!targetUser) {
     return res.status(404).json({ error: `@${rUser} was not found` });
   }
@@ -77,6 +92,30 @@ exports.respondFriendRequest = (req, res) => {
   res.json({ message: `Friend request ${status}`, request: reqObj });
 };
 
+exports.unfriend = (req, res) => {
+  const { user1, user2 } = req.body;
+  if (!user1 || !user2) {
+    return res.status(400).json({ error: 'user1 and user2 are required' });
+  }
+
+  const u1 = user1.trim().toLowerCase().replaceAll('@', '');
+  const u2 = user2.trim().toLowerCase().replaceAll('@', '');
+
+  if (store.friends[u1]) store.friends[u1].delete(u2);
+  if (store.friends[u2]) store.friends[u2].delete(u1);
+
+  // Remove any friend requests connecting them
+  store.friendRequests = store.friendRequests.filter(
+    (r) =>
+      !(
+        (r.senderUsername.toLowerCase() === u1 && r.receiverUsername.toLowerCase() === u2) ||
+        (r.senderUsername.toLowerCase() === u2 && r.receiverUsername.toLowerCase() === u1)
+      )
+  );
+
+  return res.json({ success: true, message: `Successfully unfriended @${u2}` });
+};
+
 exports.getFriendRequests = (req, res) => {
   const username = req.params.username.trim().toLowerCase().replaceAll('@', '');
   const requests = store.friendRequests.filter(
@@ -104,10 +143,31 @@ exports.cancelFriendRequest = (req, res) => {
   return res.status(404).json({ success: false, message: 'Friend request not found' });
 };
 
-exports.getFriends = (req, res) => {
+exports.getFriends = async (req, res) => {
   const username = req.params.username.trim().toLowerCase().replaceAll('@', '');
   const friendUsernames = store.friends[username] ? Array.from(store.friends[username]) : [];
-  const friendUsers = store.users.filter((u) => friendUsernames.includes(u.username.toLowerCase()));
+
+  let friendUsers = store.users.filter((u) => friendUsernames.includes(u.username.toLowerCase()));
+
+  if (isConnected() && friendUsernames.length > 0) {
+    try {
+      const dbUsers = await User.find({ username: { $in: friendUsernames } }).select('-password');
+      for (const dbu of dbUsers) {
+        if (!friendUsers.some((u) => u.username.toLowerCase() === dbu.username.toLowerCase())) {
+          friendUsers.push({
+            id: dbu._id.toString(),
+            username: dbu.username,
+            name: dbu.name,
+            campusOrCity: dbu.campusOrCity,
+            majorOrBio: dbu.majorOrBio,
+            reputation: dbu.reputation,
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
   res.json({ friends: friendUsers });
 };
+
 

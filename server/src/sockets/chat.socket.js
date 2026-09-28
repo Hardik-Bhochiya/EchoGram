@@ -1,5 +1,7 @@
 const store = require('../controllers/store');
 const { v4: uuidv4 } = require('uuid');
+const { Message } = require('../models/Message');
+const { isConnected } = require('../config/db');
 
 const registerChatSocket = (io) => {
   const chatNamespace = io.of('/chat');
@@ -58,6 +60,19 @@ const registerChatSocket = (io) => {
       } else {
         store.messages[roomId][existingIdx] = newMessage;
       }
+
+      if (isConnected()) {
+        try {
+          Message.create({
+            roomId,
+            senderId: newMessage.senderId,
+            senderName: newMessage.senderName,
+            content,
+            isAnonymous: Boolean(isAnonymous),
+          }).catch(() => {});
+        } catch (_) {}
+      }
+
 
       const room = store.rooms.find((r) => r.id === roomId);
       if (room) {

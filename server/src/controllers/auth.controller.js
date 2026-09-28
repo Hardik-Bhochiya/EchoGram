@@ -271,6 +271,8 @@ exports.getMe = async (req, res) => {
 exports.getUsers = async (req, res) => {
   try {
     const q = (req.query.q || '').trim().toLowerCase().replace(/^@/, '');
+    const userMap = new Map();
+
     if (isConnected()) {
       const filter = q
         ? {
@@ -280,23 +282,53 @@ exports.getUsers = async (req, res) => {
             ],
           }
         : {};
-      const users = await User.find(filter).select('-password').limit(20);
-      return res.json({ success: true, users });
-    } else {
-      let filtered = store.users;
-      if (q) {
-        filtered = store.users.filter((u) => {
-          return (
-            (u.username && u.username.toLowerCase().includes(q)) ||
-            (u.name && u.name.toLowerCase().includes(q))
-          );
+      const dbUsers = await User.find(filter).select('-password').limit(30);
+      for (const u of dbUsers) {
+        const key = (u.username || u._id.toString()).toLowerCase();
+        userMap.set(key, {
+          id: u._id.toString(),
+          uid: u._id.toString(),
+          username: u.username || 'user',
+          name: u.name || 'User',
+          email: u.email || '',
+          campusOrCity: u.campusOrCity || 'DDU, Nadiad, Gujarat',
+          majorOrBio: u.majorOrBio || 'Student',
+          reputation: u.reputation || 50,
+          isCollegeVerified: Boolean(u.isCollegeVerified),
+          joinedCommunityIds: u.joinedCommunityIds || [],
+          badges: u.badges || ['Newcomer'],
         });
       }
-      const safeUsers = filtered.map(({ password, ...u }) => u);
-      return res.json({ success: true, users: safeUsers });
     }
+
+    // Also include in-memory users matching query
+    let filteredStore = store.users;
+    if (q) {
+      filteredStore = store.users.filter((u) => {
+        return (
+          (u.username && u.username.toLowerCase().includes(q)) ||
+          (u.name && u.name.toLowerCase().includes(q))
+        );
+      });
+    }
+
+    for (const u of filteredStore) {
+      const key = (u.username || u.id).toLowerCase();
+      if (!userMap.has(key)) {
+        const { password, ...safeUser } = u;
+        userMap.set(key, {
+          ...safeUser,
+          id: safeUser.id || safeUser.username,
+          uid: safeUser.id || safeUser.username,
+        });
+      }
+    }
+
+    const safeUsers = Array.from(userMap.values());
+    return res.json({ success: true, users: safeUsers });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
   }
 };
+
 

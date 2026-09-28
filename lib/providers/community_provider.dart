@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import '../models/region.dart';
 import '../models/community.dart';
 import '../services/local_store_service.dart';
+import '../services/api_service.dart';
 
 class CommunityProvider extends ChangeNotifier {
   List<Region> _regions = [];
@@ -10,6 +12,7 @@ class CommunityProvider extends ChangeNotifier {
   Region? _selectedRegion;
   String _selectedCategory = 'All';
   String _searchQuery = '';
+  Timer? _syncTimer;
 
   List<Region> get regions => _regions;
   List<Community> get communities => _communities;
@@ -21,6 +24,16 @@ class CommunityProvider extends ChangeNotifier {
 
   CommunityProvider() {
     _loadCommunities();
+    // Periodically poll backend for cross-device consistency (e.g. mobile created community appears on laptop)
+    _syncTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      refreshCommunities();
+    });
+  }
+
+  @override
+  void dispose() {
+    _syncTimer?.cancel();
+    super.dispose();
   }
 
   void addLocation(String location) {
@@ -53,7 +66,39 @@ class CommunityProvider extends ChangeNotifier {
       _selectedRegion = _regions.first;
     }
     notifyListeners();
+    refreshCommunities();
   }
+
+  Future<void> refreshCommunities() async {
+    try {
+      final remoteList = await ApiService().getCommunities();
+      if (remoteList.isNotEmpty) {
+        final Map<String, Community> map = {};
+        // Keep current joined status preferences
+        for (final c in _communities) {
+          map[c.id] = c;
+        }
+        bool hasChanges = false;
+        for (final rc in remoteList) {
+          if (!map.containsKey(rc.id) || map[rc.id]!.memberCount != rc.memberCount) {
+            hasChanges = true;
+          }
+          final current = map[rc.id];
+          map[rc.id] = current != null
+              ? rc.copyWith(isJoined: current.isJoined)
+              : rc;
+          LocalStoreService().addCommunity(map[rc.id]!);
+          addLocation(rc.regionName);
+        }
+        if (hasChanges || _communities.length != map.length) {
+          _communities = map.values.toList();
+          _syncRegions();
+          notifyListeners();
+        }
+      }
+    } catch (_) {}
+  }
+
 
   void selectRegion(Region region) {
     _selectedRegion = region;
@@ -151,6 +196,7 @@ class CommunityProvider extends ChangeNotifier {
 
     _communities.insert(0, newCommunity);
     LocalStoreService().addCommunity(newCommunity);
+    ApiService().createCommunity(newCommunity);
     notifyListeners();
     return newCommunity;
   }
@@ -163,6 +209,7 @@ class CommunityProvider extends ChangeNotifier {
       if (comm.creatorId == currentUserId || currentUserId.isEmpty) {
         _communities.removeAt(index);
         LocalStoreService().deleteCommunity(communityId);
+        ApiService().deleteCommunity(communityId, currentUserId);
         notifyListeners();
         return true;
       }

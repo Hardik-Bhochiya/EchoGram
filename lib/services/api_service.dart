@@ -94,21 +94,109 @@ class ApiService {
   }
 
   Future<List<User>> searchPeers(String query) async {
-    if (_hasCheckedReachability && _isServerReachable) {
-      try {
-        final res = await http
-            .get(Uri.parse('$baseUrl/auth/users?q=$query'), headers: _headers)
-            .timeout(const Duration(milliseconds: 1200));
-        if (res.statusCode == 200) {
-          final data = jsonDecode(res.body);
-          if (data['users'] != null) {
-            return (data['users'] as List).map((j) => User.fromJson(j)).toList();
-          }
+    try {
+      final res = await http
+          .get(Uri.parse('$baseUrl/auth/users?q=$query'), headers: _headers)
+          .timeout(const Duration(seconds: 3));
+      if (res.statusCode == 200) {
+        _isServerReachable = true;
+        _hasCheckedReachability = true;
+        final data = jsonDecode(res.body);
+        if (data['users'] != null) {
+          return (data['users'] as List).map((j) => User.fromJson(j)).toList();
         }
-      } catch (_) {}
-    }
+      }
+    } catch (_) {}
     return [];
   }
+
+  // Friends: Send Request
+  Future<bool> sendFriendRequest({
+    required String senderId,
+    required String senderUsername,
+    required String senderName,
+    required String receiverUsername,
+    String? senderAvatar,
+  }) async {
+    try {
+      final res = await http
+          .post(
+            Uri.parse('$baseUrl/friends/request'),
+            headers: _headers,
+            body: jsonEncode({
+              'senderId': senderId,
+              'senderUsername': senderUsername,
+              'senderName': senderName,
+              'senderAvatar': senderAvatar ?? '👤',
+              'receiverUsername': receiverUsername,
+            }),
+          )
+          .timeout(const Duration(seconds: 3));
+      return res.statusCode == 200 || res.statusCode == 201;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // Friends: Respond (accept/decline)
+  Future<bool> respondFriendRequest(String requestId, String status, {String? senderUsername, String? receiverUsername}) async {
+    try {
+      final res = await http
+          .post(
+            Uri.parse('$baseUrl/friends/respond'),
+            headers: _headers,
+            body: jsonEncode({
+              'requestId': requestId,
+              'status': status,
+              'senderUsername': senderUsername,
+              'receiverUsername': receiverUsername,
+            }),
+          )
+          .timeout(const Duration(seconds: 3));
+      return res.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // Friends: Cancel Request
+  Future<bool> cancelFriendRequest(String senderUsername, String receiverUsername) async {
+    try {
+      final res = await http
+          .post(
+            Uri.parse('$baseUrl/friends/cancel'),
+            headers: _headers,
+            body: jsonEncode({
+              'senderUsername': senderUsername,
+              'receiverUsername': receiverUsername,
+            }),
+          )
+          .timeout(const Duration(seconds: 3));
+      return res.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // Friends: Unfriend
+  Future<bool> unfriend(String user1, String user2) async {
+    try {
+      final res = await http
+          .post(
+            Uri.parse('$baseUrl/friends/unfriend'),
+            headers: _headers,
+            body: jsonEncode({
+              'user1': user1,
+              'user2': user2,
+            }),
+          )
+          .timeout(const Duration(seconds: 3));
+      return res.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
 
   // Auth: Login
   Future<User?> login(String usernameOrEmail, String password) async {
@@ -196,27 +284,73 @@ class ApiService {
 
   // Communities: Get All
   Future<List<Community>> getCommunities() async {
-    if (_hasCheckedReachability && _isServerReachable) {
-      try {
-        final response = await http
-            .get(Uri.parse('$baseUrl/communities'), headers: _headers)
-            .timeout(const Duration(seconds: 2));
+    try {
+      final response = await http
+          .get(Uri.parse('$baseUrl/communities'), headers: _headers)
+          .timeout(const Duration(seconds: 3));
 
-        if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
-          final list = data['data'] as List<dynamic>;
-          if (list.isNotEmpty) {
-            final parsed = list.map((json) => Community.fromJson(json)).toList();
-            return parsed;
-          }
+      if (response.statusCode == 200) {
+        _isServerReachable = true;
+        _hasCheckedReachability = true;
+        final data = jsonDecode(response.body);
+        final list = data['data'] as List<dynamic>;
+        if (list.isNotEmpty) {
+          final parsed = list.map((json) => Community.fromJson(json)).toList();
+          return parsed;
         }
-      } catch (_) {
-        _isServerReachable = false;
       }
-    }
+    } catch (_) {}
 
     return LocalStoreService().getCommunities();
   }
+
+  // Communities: Create
+  Future<Community?> createCommunity(Community community) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/communities'),
+            headers: _headers,
+            body: jsonEncode({
+              'id': community.id,
+              'name': community.name,
+              'description': community.description,
+              'regionId': community.regionId,
+              'regionName': community.regionName,
+              'locationSpot': community.locationSpot,
+              'creatorId': community.creatorId,
+              'category': community.category,
+              'iconEmoji': community.iconEmoji,
+              'bannerColorHex': community.bannerColorHex,
+              'rules': community.rules,
+            }),
+          )
+          .timeout(const Duration(seconds: 3));
+
+      if (response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        return Community.fromJson(data['data']);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  // Communities: Delete
+  Future<bool> deleteCommunity(String communityId, String userId) async {
+    try {
+      final response = await http
+          .delete(
+            Uri.parse('$baseUrl/communities/$communityId'),
+            headers: _headers,
+            body: jsonEncode({'userId': userId}),
+          )
+          .timeout(const Duration(seconds: 3));
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
 
   // Questions: Get All
   Future<List<Question>> getQuestions({String? communityId, String? tag, String? search}) async {

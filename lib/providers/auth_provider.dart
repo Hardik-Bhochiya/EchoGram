@@ -454,6 +454,7 @@ class AuthProvider extends ChangeNotifier {
   Future<void> cancelFriendRequest(String targetUsername) async {
     final tUser = targetUsername.trim().toLowerCase().replaceAll('@', '');
     LocalStoreService().cancelFriendRequest(_activeUsername, tUser);
+    ApiService().cancelFriendRequest(_activeUsername, tUser);
     notifyListeners();
   }
 
@@ -474,20 +475,40 @@ class AuthProvider extends ChangeNotifier {
     );
 
     LocalStoreService().addFriendRequest(req);
+    ApiService().sendFriendRequest(
+      senderId: _currentUser?.id ?? 'user-hardik',
+      senderUsername: senderUname,
+      senderName: senderName,
+      receiverUsername: targetUsername,
+      senderAvatar: _currentUser?.avatarUrl,
+    );
     notifyListeners();
     return true;
   }
 
-  Future<void> respondFriendRequest(String requestId, String status) async {
+  Future<void> respondFriendRequest(String requestId, String status, {String? senderUsername}) async {
     LocalStoreService().respondFriendRequest(requestId, status);
+    ApiService().respondFriendRequest(
+      requestId,
+      status,
+      senderUsername: senderUsername,
+      receiverUsername: _activeUsername,
+    );
+    notifyListeners();
+  }
+
+  Future<void> unfriend(String targetUsername) async {
+    if (_currentUser == null) return;
+    final tUser = targetUsername.trim().toLowerCase().replaceAll('@', '');
+    LocalStoreService().removeFriend(_currentUser!.username, tUser);
+    ApiService().unfriend(_currentUser!.username, tUser);
     notifyListeners();
   }
 
   Future<void> removeFriend(String targetUsername) async {
-    if (_currentUser == null) return;
-    LocalStoreService().removeFriend(_currentUser!.username, targetUsername);
-    notifyListeners();
+    await unfriend(targetUsername);
   }
+
 
   @override
   void dispose() {

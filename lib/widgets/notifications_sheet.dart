@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/friend_request.dart';
 import '../providers/auth_provider.dart';
 import '../providers/notification_provider.dart';
+import '../providers/chat_provider.dart';
 import '../services/friendship_service.dart';
 import '../screens/chat/chat_conversation_screen.dart';
 
@@ -52,7 +53,9 @@ class _NotificationsSheetState extends State<NotificationsSheet> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => ChatConversationScreen(roomId: 'dm_${req.senderId}'),
+                    builder: (_) => ChatConversationScreen(
+                      roomId: ChatProvider.getDirectRoomId(currentUser?.username ?? 'user', req.senderUsername),
+                    ),
                   ),
                 );
               },
