@@ -105,7 +105,7 @@ class ChatMessage {
       senderName: json['senderName'] as String? ?? 'User',
       senderAvatar: json['senderAvatar'] as String?,
       content: json['content'] as String? ?? '',
-      timestamp: DateTime.tryParse(json['timestamp'] ?? '') ?? DateTime.now(),
+      timestamp: (DateTime.tryParse(json['timestamp']?.toString() ?? json['createdAt']?.toString() ?? '') ?? DateTime.now()).toLocal(),
       isMine: currentUserId != null ? (sId == currentUserId) : (json['isMine'] as bool? ?? false),
       isAnonymous: json['isAnonymous'] as bool? ?? false,
       type: MessageType.values.firstWhere(

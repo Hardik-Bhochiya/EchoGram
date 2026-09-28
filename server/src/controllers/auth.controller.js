@@ -85,13 +85,13 @@ exports.register = async (req, res) => {
       .replace(/^@/, '');
 
     if (isConnected()) {
-      const emailExists = await User.findOne({ email });
+      const emailExists = await User.findOne({ email: { $regex: `^${email.trim()}$`, $options: 'i' } });
       if (emailExists) {
         return res.status(400).json({ success: false, message: 'User with this email already exists' });
       }
-      const usernameExists = await User.findOne({ username: cleanUsername });
+      const usernameExists = await User.findOne({ username: { $regex: `^${cleanUsername}$`, $options: 'i' } });
       if (usernameExists) {
-        return res.status(400).json({ success: false, message: 'Username is already taken' });
+        return res.status(400).json({ success: false, message: `Username '@${cleanUsername}' is already taken. Please choose another username.` });
       }
 
       const isCollegeVerified = email.endsWith('.ddu.ac.in') || email.includes('ddu');
@@ -134,7 +134,7 @@ exports.register = async (req, res) => {
         (u) => u.username && u.username.toLowerCase() === cleanUsername
       );
       if (usernameExists) {
-        return res.status(400).json({ success: false, message: 'Username is already taken' });
+        return res.status(400).json({ success: false, message: `Username '@${cleanUsername}' is already taken. Please choose another username.` });
       }
 
       const salt = await bcrypt.genSalt(10);
@@ -262,6 +262,24 @@ exports.getMe = async (req, res) => {
       const user = store.users.find((u) => u.id === userId) || store.users[0];
       const { password, ...safeUser } = user;
       return res.json({ success: true, user: safeUser });
+    }
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+exports.checkUsername = async (req, res) => {
+  try {
+    const raw = (req.params.username || '').trim().toLowerCase().replace(/^@/, '');
+    if (!raw) {
+      return res.status(400).json({ success: false, available: false, message: 'Username is required' });
+    }
+    if (isConnected()) {
+      const exists = await User.findOne({ username: { $regex: `^${raw}$`, $options: 'i' } });
+      return res.json({ success: true, available: !exists, username: raw });
+    } else {
+      const exists = store.users.some((u) => u.username && u.username.toLowerCase() === raw);
+      return res.json({ success: true, available: !exists, username: raw });
     }
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });

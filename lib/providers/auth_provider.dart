@@ -208,6 +208,17 @@ class AuthProvider extends ChangeNotifier {
     _status = AuthStatus.authenticating;
     notifyListeners();
 
+    final cleanUsername = username.trim().toLowerCase().replaceAll('@', '');
+
+    // 0. Pre-validate username uniqueness against local cache
+    if (LocalStoreService().isUsernameTaken(cleanUsername)) {
+      _isLoading = false;
+      _status = AuthStatus.unauthenticated;
+      _errorMessage = "Username '@$cleanUsername' is already taken. Please choose another username.";
+      notifyListeners();
+      return false;
+    }
+
     try {
       User? user;
 
@@ -216,7 +227,7 @@ class AuthProvider extends ChangeNotifier {
         try {
           user = await _authService.register(
             name: name,
-            username: username,
+            username: cleanUsername,
             firstName: firstName,
             lastName: lastName,
             email: email,
@@ -235,7 +246,6 @@ class AuthProvider extends ChangeNotifier {
               errStr.contains('invalid')) {
             rethrow;
           }
-          // If project-level (configuration-not-found / operation-not-allowed), proceed to Node.js/LocalStore
         }
       }
 
@@ -244,13 +254,21 @@ class AuthProvider extends ChangeNotifier {
         try {
           user = await ApiService().register(
             name: name,
-            username: username,
+            username: cleanUsername,
             email: email,
             password: password,
             campusOrCity: campusOrCity ?? campus,
             majorOrBio: majorOrBio,
           );
         } catch (e) {
+          final errStr = e.toString().replaceFirst('Exception: ', '');
+          if (errStr.contains('already taken') || errStr.contains('already exists')) {
+            _isLoading = false;
+            _status = AuthStatus.unauthenticated;
+            _errorMessage = errStr;
+            notifyListeners();
+            return false;
+          }
           debugPrint('ApiService register notice: $e');
         }
       }

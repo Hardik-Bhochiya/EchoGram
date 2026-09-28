@@ -35,7 +35,8 @@ const registerChatSocket = (io) => {
       });
     });
 
-    socket.on('send_message', ({ id, roomId, content, senderId, senderName, isAnonymous, senderUsername }) => {
+    socket.on('send_message', ({ id, roomId, content, senderId, senderName, isAnonymous, senderUsername, timestamp }) => {
+      const sentTime = timestamp ? new Date(timestamp).toISOString() : new Date().toISOString();
       const newMessage = {
         id: id || uuidv4(),
         roomId,
@@ -49,7 +50,8 @@ const registerChatSocket = (io) => {
         isEdited: false,
         isDeleted: false,
         deletedForUserIds: [],
-        timestamp: new Date().toISOString(),
+        timestamp: sentTime,
+        createdAt: sentTime,
       };
 
       if (!store.messages[roomId]) store.messages[roomId] = [];
@@ -69,6 +71,7 @@ const registerChatSocket = (io) => {
             senderName: newMessage.senderName,
             content,
             isAnonymous: Boolean(isAnonymous),
+            createdAt: new Date(sentTime),
           }).catch(() => {});
         } catch (_) {}
       }

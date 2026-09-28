@@ -72,29 +72,22 @@ class CommunityProvider extends ChangeNotifier {
   Future<void> refreshCommunities() async {
     try {
       final remoteList = await ApiService().getCommunities();
-      if (remoteList.isNotEmpty) {
-        final Map<String, Community> map = {};
-        // Keep current joined status preferences
-        for (final c in _communities) {
-          map[c.id] = c;
+      final Map<String, Community> map = {};
+      bool hasChanges = false;
+      for (final rc in remoteList) {
+        final existingIdx = _communities.indexWhere((c) => c.id == rc.id);
+        final isJoined = existingIdx != -1 ? _communities[existingIdx].isJoined : false;
+        map[rc.id] = rc.copyWith(isJoined: isJoined);
+        LocalStoreService().addCommunity(map[rc.id]!);
+        addLocation(rc.regionName);
+        if (existingIdx == -1 || _communities[existingIdx].memberCount != rc.memberCount) {
+          hasChanges = true;
         }
-        bool hasChanges = false;
-        for (final rc in remoteList) {
-          if (!map.containsKey(rc.id) || map[rc.id]!.memberCount != rc.memberCount) {
-            hasChanges = true;
-          }
-          final current = map[rc.id];
-          map[rc.id] = current != null
-              ? rc.copyWith(isJoined: current.isJoined)
-              : rc;
-          LocalStoreService().addCommunity(map[rc.id]!);
-          addLocation(rc.regionName);
-        }
-        if (hasChanges || _communities.length != map.length) {
-          _communities = map.values.toList();
-          _syncRegions();
-          notifyListeners();
-        }
+      }
+      if (hasChanges || _communities.length != map.length) {
+        _communities = map.values.toList();
+        _syncRegions();
+        notifyListeners();
       }
     } catch (_) {}
   }

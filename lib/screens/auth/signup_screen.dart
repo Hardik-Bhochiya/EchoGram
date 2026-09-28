@@ -22,8 +22,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final _confirmPasswordController = TextEditingController();
   final _customLocationController = TextEditingController();
 
-  String _selectedLocation = 'Nadiad';
-  List<String> _locations = ['Nadiad', 'Ahmedabad', 'Mumbai', 'Dwarka'];
+  String _selectedLocation = 'DDU Nadiad';
+  List<String> _locations = ['DDU Nadiad', 'Nadiad', 'Ahmedabad', 'Vadodara', 'Gandhinagar'];
   bool _isCustomLocation = false;
 
   bool _obscurePassword = true;

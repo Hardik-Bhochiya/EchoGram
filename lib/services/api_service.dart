@@ -79,17 +79,23 @@ class ApiService {
   Future<bool> checkUsernameAvailable(String username) async {
     final clean = username.trim().toLowerCase().replaceAll('@', '');
     if (clean.length < 3) return false;
-    if (_hasCheckedReachability && _isServerReachable) {
-      try {
-        final res = await http
-            .get(Uri.parse('$baseUrl/auth/check-username/$clean'), headers: _headers)
-            .timeout(const Duration(milliseconds: 900));
-        if (res.statusCode == 200) {
-          final data = jsonDecode(res.body);
-          return data['available'] as bool? ?? false;
-        }
-      } catch (_) {}
+
+    // Check locally registered cache first
+    if (LocalStoreService().isUsernameTaken(clean)) {
+      return false;
     }
+
+    try {
+      final res = await http
+          .get(Uri.parse('$baseUrl/auth/check-username/$clean'), headers: _headers)
+          .timeout(const Duration(seconds: 3));
+      if (res.statusCode == 200) {
+        _isServerReachable = true;
+        _hasCheckedReachability = true;
+        final data = jsonDecode(res.body);
+        return data['available'] as bool? ?? false;
+      }
+    } catch (_) {}
     return true;
   }
 
@@ -240,7 +246,8 @@ class ApiService {
     String? campusOrCity,
     String? majorOrBio,
   }) async {
-    final cleanUsername = username ?? (email.contains('@') ? email.split('@').first : 'user');
+    final cleanUsername = (username ?? (email.contains('@') ? email.split('@').first : 'user'))
+        .trim().toLowerCase().replaceAll('@', '');
     try {
       final response = await http
           .post(
@@ -249,7 +256,7 @@ class ApiService {
             body: jsonEncode({
               'name': name,
               'username': cleanUsername,
-              'email': email,
+              'email': email.trim().toLowerCase(),
               'password': password,
               'campusOrCity': campusOrCity,
               'majorOrBio': majorOrBio,
@@ -265,21 +272,15 @@ class ApiService {
         _isServerReachable = true;
         _hasCheckedReachability = true;
         return User.fromJson(data['user']);
+      } else {
+        final err = jsonDecode(response.body);
+        throw Exception(err['message'] ?? 'Registration failed.');
       }
-    } catch (_) {}
-
-    return User(
-      id: MockDataService.generateId(),
-      username: cleanUsername,
-      name: name,
-      email: email,
-      campusOrCity: campusOrCity ?? 'DDU, Nadiad, Gujarat',
-      majorOrBio: majorOrBio ?? 'DDU Student',
-      reputation: 50,
-      joinedCommunityIds: ['c1'],
-      badges: ['New Member', 'Verified DDU Student'],
-      isCollegeVerified: email.endsWith('.ddu.ac.in') || email.contains('ddu'),
-    );
+    } on Exception {
+      rethrow;
+    } catch (e) {
+      throw Exception('Connection error during registration: $e');
+    }
   }
 
   // Communities: Get All
@@ -293,11 +294,8 @@ class ApiService {
         _isServerReachable = true;
         _hasCheckedReachability = true;
         final data = jsonDecode(response.body);
-        final list = data['data'] as List<dynamic>;
-        if (list.isNotEmpty) {
-          final parsed = list.map((json) => Community.fromJson(json)).toList();
-          return parsed;
-        }
+        final list = data['data'] as List<dynamic>? ?? [];
+        return list.map((json) => Community.fromJson(json)).toList();
       }
     } catch (_) {}
 

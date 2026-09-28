@@ -66,20 +66,23 @@ class LocalStoreService {
         final list = jsonDecode(cStr) as List<dynamic>;
         _communities = list
             .map((item) => Community.fromJson(item as Map<String, dynamic>))
-            .where((c) => !c.id.startsWith('c') && c.memberCount < 100)
+            .where((c) => !c.id.startsWith('c') && c.memberCount < 100 && !c.name.toLowerCase().contains('canteen') && !c.name.toLowerCase().contains('mumbai'))
             .toList();
       } else {
         _communities = [];
       }
       _persistCommunities();
 
-      // 4. Load Locations (Dynamic campus / city locations)
+      // 4. Load Locations (Dynamic campus / city locations - 5 real defaults)
       final locStr = prefs.getString(_keyLocations);
       if (locStr != null && locStr.isNotEmpty) {
         final list = jsonDecode(locStr) as List<dynamic>;
-        _locations = list.map((e) => e.toString()).toList();
+        _locations = list.map((e) => e.toString()).where((l) => l != 'Mumbai' && l != 'Dwarka').toList();
+        if (_locations.isEmpty) {
+          _locations = ['DDU Nadiad', 'Nadiad', 'Ahmedabad', 'Vadodara', 'Gandhinagar'];
+        }
       } else {
-        _locations = ['Nadiad', 'Ahmedabad', 'Mumbai', 'Dwarka'];
+        _locations = ['DDU Nadiad', 'Nadiad', 'Ahmedabad', 'Vadodara', 'Gandhinagar'];
         _persistLocations();
       }
 
@@ -142,8 +145,9 @@ class LocalStoreService {
     } catch (e) {
       debugPrint('[LocalStore] Initialization fallback: $e');
       _questions = List.from(MockDataService.initialQuestions);
-      _communities = List.from(MockDataService.initialCommunities);
-      _chatRooms = List.from(MockDataService.initialChatRooms);
+      _communities = [];
+      _locations = ['DDU Nadiad', 'Nadiad', 'Ahmedabad', 'Vadodara', 'Gandhinagar'];
+      _chatRooms = [];
       _friendRequests = [];
       _userFriends = {};
       _initialized = true;
@@ -573,6 +577,12 @@ class LocalStoreService {
   // --- Registered Users ---
 
   List<User> getRegisteredUsers() => List.unmodifiable(_users);
+
+  bool isUsernameTaken(String username) {
+    final clean = username.trim().toLowerCase().replaceAll('@', '');
+    if (clean.isEmpty) return false;
+    return _users.any((u) => u.username.toLowerCase() == clean);
+  }
 
   void saveUser(User user) {
     final idx = _users.indexWhere((u) =>

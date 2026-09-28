@@ -167,6 +167,7 @@ class SocketService {
     required String senderName,
     String? senderUsername,
     required bool isAnonymous,
+    String? timestamp,
   }) {
     if (disabledForTests || !_isConnected) return;
     _socket?.emit('send_message', {
@@ -177,6 +178,7 @@ class SocketService {
       'senderName': senderName,
       if (senderUsername != null) 'senderUsername': senderUsername,
       'isAnonymous': isAnonymous,
+      if (timestamp != null) 'timestamp': timestamp,
     });
   }
 

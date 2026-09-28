@@ -500,6 +500,7 @@ class ChatProvider extends ChangeNotifier {
       senderName: isAnonymous ? 'Anonymous' : currentUser.name,
       senderUsername: currentUser.username,
       isAnonymous: isAnonymous,
+      timestamp: newMsg.timestamp.toIso8601String(),
     );
 
     // If in standalone offline mobile mode, trigger interactive realistic peer reply
