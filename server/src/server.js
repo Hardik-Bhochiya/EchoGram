@@ -1,6 +1,8 @@
 require('dotenv').config();
 const express = require('express');
 const http = require('http');
+const path = require('path');
+const fs = require('fs');
 const cors = require('cors');
 const { Server } = require('socket.io');
 const { connectDB } = require('./config/db');
@@ -51,6 +53,18 @@ app.use('/api/communities', communityRoutes);
 app.use('/api/questions', questionRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/friends', friendRoutes);
+
+// Serve Flutter Web app if built
+const flutterWebDir = path.join(__dirname, '../../build/web');
+if (fs.existsSync(flutterWebDir)) {
+  app.use(express.static(flutterWebDir));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) {
+      return next();
+    }
+    res.sendFile(path.join(flutterWebDir, 'index.html'));
+  });
+}
 
 // 404 Handler
 app.use((req, res) => {

@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
-import '../../services/api_service.dart';
+import '../../services/local_store_service.dart';
 
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
@@ -19,9 +19,11 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  final _customLocationController = TextEditingController();
 
   String _selectedLocation = 'Nadiad';
-  final List<String> _locations = ['Mumbai', 'Ahmedabad', 'Dwarka', 'Nadiad'];
+  List<String> _locations = ['Nadiad', 'Ahmedabad', 'Mumbai', 'Dwarka'];
+  bool _isCustomLocation = false;
 
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
@@ -34,6 +36,13 @@ class _SignUpScreenState extends State<SignUpScreen> {
   void initState() {
     super.initState();
     _usernameController.addListener(_onUsernameChanged);
+    final savedLocs = LocalStoreService().getLocations();
+    if (savedLocs.isNotEmpty) {
+      _locations = List.from(savedLocs);
+      if (!_locations.contains(_selectedLocation)) {
+        _selectedLocation = _locations.first;
+      }
+    }
   }
 
   @override
@@ -46,6 +55,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
+    _customLocationController.dispose();
     super.dispose();
   }
 
@@ -87,11 +97,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
     _debounceTimer = Timer(const Duration(milliseconds: 300), () async {
       final auth = context.read<AuthProvider>();
-      bool available = auth.isUsernameAvailable(raw);
-
-      if (available && ApiService().isServerReachable) {
-        available = await ApiService().checkUsernameAvailable(raw);
-      }
+      bool available = await auth.checkUsernameAvailable(raw);
 
       if (!mounted) return;
       setState(() {
@@ -113,6 +119,13 @@ class _SignUpScreenState extends State<SignUpScreen> {
         return;
       }
 
+      final effectiveLocation = _isCustomLocation && _customLocationController.text.trim().isNotEmpty
+          ? _customLocationController.text.trim()
+          : _selectedLocation;
+
+      // Automatically register the location into app registry if new
+      LocalStoreService().addLocation(effectiveLocation);
+
       final auth = context.read<AuthProvider>();
       final uName = _usernameController.text.trim().toLowerCase().replaceAll('@', '');
       final fName = _firstNameController.text.trim();
@@ -126,8 +139,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
         lastName: lName,
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
-        campusOrCity: _selectedLocation,
-        majorOrBio: '$_selectedLocation Community Member',
+        campusOrCity: effectiveLocation,
+        majorOrBio: '$effectiveLocation Community Member',
       );
 
       if (success && mounted) {
@@ -135,7 +148,69 @@ class _SignUpScreenState extends State<SignUpScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: const Color(0xFF238636),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            margin: const EdgeInsets.all(16),
             content: Text('Welcome to NearTalk, @$uName! 🎉'),
+          ),
+        );
+      } else if (!success && mounted) {
+        final err = auth.errorMessage ?? 'Registration failed. Please check details.';
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: const Color(0xFF161B22),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: const BorderSide(color: Color(0xFFF85149), width: 1.5),
+            ),
+            title: const Row(
+              children: [
+                Icon(Icons.error_outline_rounded, color: Color(0xFFF85149), size: 24),
+                SizedBox(width: 10),
+                Text(
+                  'Sign Up Notice',
+                  style: TextStyle(color: Color(0xFFF0F6FC), fontSize: 17, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  err,
+                  style: const TextStyle(color: Color(0xFFC9D1D9), fontSize: 13.5, height: 1.5),
+                ),
+                if (err.contains('Firebase') || err.contains('Console')) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0D1117),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFF30363D)),
+                    ),
+                    child: const Text(
+                      '📌 How to enable in Firebase Console:\n'
+                      '1. Go to console.firebase.google.com\n'
+                      '2. Select your project: neartalk-app-2433c\n'
+                      '3. Go to Build > Authentication\n'
+                      '4. Click "Get Started"\n'
+                      '5. Under Sign-in method, click Email/Password > Enable > Save\n'
+                      '6. Go to Firestore Database > Create Database',
+                      style: TextStyle(color: Color(0xFF8B949E), fontSize: 12, height: 1.45),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Got it', style: TextStyle(color: Color(0xFF58A6FF), fontWeight: FontWeight.bold)),
+              ),
+            ],
           ),
         );
       }
@@ -376,44 +451,106 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                // Location * Dropdown
-                const Text(
-                  'LOCATION * (CITY)',
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF8B949E), letterSpacing: 0.6),
+                // Location * Dropdown & Add Location
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'COLLEGE / LOCATION *',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF8B949E), letterSpacing: 0.6),
+                    ),
+                    GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _isCustomLocation = !_isCustomLocation;
+                        });
+                      },
+                      child: Text(
+                        _isCustomLocation ? 'Select from list' : '+ Add New Location',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF58A6FF)),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF161B22),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFF30363D)),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: _selectedLocation,
-                      dropdownColor: const Color(0xFF21262D),
-                      style: const TextStyle(color: Color(0xFFF0F6FC), fontSize: 14),
-                      icon: const Icon(Icons.arrow_drop_down_rounded, color: Color(0xFF58A6FF)),
-                      isExpanded: true,
-                      items: _locations.map((loc) {
-                        return DropdownMenuItem(
-                          value: loc,
-                          child: Row(
-                            children: [
-                              const Icon(Icons.location_on_rounded, color: Color(0xFF58A6FF), size: 16),
-                              const SizedBox(width: 8),
-                              Text(loc, style: const TextStyle(fontWeight: FontWeight.w600)),
-                            ],
+                if (!_isCustomLocation)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF161B22),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFF30363D)),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: _locations.contains(_selectedLocation) ? _selectedLocation : (_locations.isNotEmpty ? _locations.first : null),
+                        dropdownColor: const Color(0xFF21262D),
+                        style: const TextStyle(color: Color(0xFFF0F6FC), fontSize: 14),
+                        icon: const Icon(Icons.arrow_drop_down_rounded, color: Color(0xFF58A6FF)),
+                        isExpanded: true,
+                        items: [
+                          ..._locations.map((loc) {
+                            return DropdownMenuItem(
+                              value: loc,
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.location_on_rounded, color: Color(0xFF58A6FF), size: 16),
+                                  const SizedBox(width: 8),
+                                  Text(loc, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                ],
+                              ),
+                            );
+                          }),
+                          const DropdownMenuItem(
+                            value: '__ADD_NEW__',
+                            child: Row(
+                              children: [
+                                Icon(Icons.add_location_alt_rounded, color: Color(0xFF238636), size: 16),
+                                SizedBox(width: 8),
+                                Text('+ Add New Location / College...', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF238636))),
+                              ],
+                            ),
                           ),
-                        );
-                      }).toList(),
-                      onChanged: (val) {
-                        if (val != null) setState(() => _selectedLocation = val);
+                        ],
+                        onChanged: (val) {
+                          if (val == '__ADD_NEW__') {
+                            setState(() => _isCustomLocation = true);
+                          } else if (val != null) {
+                            setState(() => _selectedLocation = val);
+                          }
+                        },
+                      ),
+                    ),
+                  )
+                else
+                  Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF161B22),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFF58A6FF)),
+                    ),
+                    child: TextFormField(
+                      controller: _customLocationController,
+                      style: const TextStyle(color: Color(0xFFF0F6FC), fontSize: 14),
+                      decoration: InputDecoration(
+                        prefixIcon: const Icon(Icons.add_location_alt_rounded, color: Color(0xFF58A6FF), size: 18),
+                        hintText: 'Enter college or city (e.g. DDU, Nadiad)',
+                        hintStyle: const TextStyle(color: Color(0xFF8B949E), fontSize: 13),
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.close_rounded, color: Color(0xFF8B949E), size: 18),
+                          onPressed: () => setState(() => _isCustomLocation = false),
+                        ),
+                      ),
+                      validator: (v) {
+                        if (_isCustomLocation && (v == null || v.trim().isEmpty)) {
+                          return 'Please enter your location or college';
+                        }
+                        return null;
                       },
                     ),
                   ),
-                ),
                 const SizedBox(height: 16),
 
                 // Password *
@@ -485,7 +622,32 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     },
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
+
+                // Inline Notice / Error Banner if any
+                if (auth.errorMessage != null && auth.errorMessage!.isNotEmpty)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2E1A1A),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFF85149)),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.info_outline_rounded, color: Color(0xFFF85149), size: 18),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            auth.errorMessage!,
+                            style: const TextStyle(color: Color(0xFFF85149), fontSize: 12.5, height: 1.4),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
 
                 // Sign Up Button
                 ElevatedButton(

@@ -12,8 +12,8 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _usernameOrEmailController = TextEditingController(text: 'hardik_07');
-  final _passwordController = TextEditingController(text: 'password123');
+  final _usernameOrEmailController = TextEditingController();
+  final _passwordController = TextEditingController();
   bool _obscurePassword = true;
 
   @override
@@ -32,22 +32,18 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       if (!success && mounted) {
+        final err = auth.errorMessage ?? 'Invalid email/username or password.';
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            backgroundColor: Color(0xFFF85149),
-            content: Text('Invalid username or password. Try a demo account below!'),
+          SnackBar(
+            backgroundColor: const Color(0xFFF85149),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            margin: const EdgeInsets.all(16),
+            content: Text(err),
           ),
         );
       }
     }
-  }
-
-  void _quickFillDemoUser(String username) {
-    setState(() {
-      _usernameOrEmailController.text = username;
-      _passwordController.text = 'password123';
-    });
-    _handleLogin();
   }
 
   @override
@@ -111,60 +107,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       color: Color(0xFF8B949E),
                     ),
                   ),
-                  const SizedBox(height: 28),
-
-                  // Quick Demo Switcher Bar (Lifesaver for live presentations)
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF161B22),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFF30363D)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Row(
-                          children: [
-                            Icon(Icons.bolt_rounded, size: 15, color: Color(0xFFE3B341)),
-                            SizedBox(width: 6),
-                            Text(
-                              'Live Demo Quick-Switch Accounts',
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFFF0F6FC),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 6,
-                          children: [
-                            _buildQuickUserChip(
-                              label: 'Hardik (@hardik_07)',
-                              username: 'hardik_07',
-                            ),
-                            _buildQuickUserChip(
-                              label: 'Rahul (@rahul123)',
-                              username: 'rahul123',
-                            ),
-                            _buildQuickUserChip(
-                              label: 'Priya (@priya_it)',
-                              username: 'priya_it',
-                            ),
-                            _buildQuickUserChip(
-                              label: 'Dev (@devshah)',
-                              username: 'devshah',
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 22),
+                  const SizedBox(height: 24),
 
                   // Email / Username Field
                   const Text(
@@ -269,36 +212,12 @@ class _LoginScreenState extends State<LoginScreen> {
                             style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                           ),
                   ),
-                  const SizedBox(height: 14),
-
-                  // Explore as Guest
-                  OutlinedButton(
-                    onPressed: () => auth.continueAsGuest(),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFFF0F6FC),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      side: const BorderSide(color: Color(0xFF30363D)),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.explore_outlined, size: 16, color: Color(0xFF58A6FF)),
-                        SizedBox(width: 8),
-                        Text(
-                          'Explore as Guest',
-                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
-                        ),
-                      ],
-                    ),
-                  ),
                   const SizedBox(height: 24),
 
                   // Sign Up Link
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       const Text(
                         "Don't have an account? ",
@@ -324,29 +243,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 ],
               ),
             ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildQuickUserChip({required String label, required String username}) {
-    return InkWell(
-      onTap: () => _quickFillDemoUser(username),
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: const Color(0xFF21262D),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xFF30363D)),
-        ),
-        child: Text(
-          label,
-          style: const TextStyle(
-            fontSize: 11.5,
-            color: Color(0xFF58A6FF),
-            fontWeight: FontWeight.w600,
           ),
         ),
       ),

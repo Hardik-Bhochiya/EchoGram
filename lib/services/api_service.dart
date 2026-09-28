@@ -112,31 +112,29 @@ class ApiService {
 
   // Auth: Login
   Future<User?> login(String usernameOrEmail, String password) async {
-    if (_hasCheckedReachability && _isServerReachable) {
-      try {
-        final response = await http
-            .post(
-              Uri.parse('$baseUrl/auth/login'),
-              headers: _headers,
-              body: jsonEncode({
-                'usernameOrEmail': usernameOrEmail.trim(),
-                'email': usernameOrEmail.trim(),
-                'password': password,
-              }),
-            )
-            .timeout(const Duration(seconds: 2));
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/auth/login'),
+            headers: _headers,
+            body: jsonEncode({
+              'usernameOrEmail': usernameOrEmail.trim(),
+              'email': usernameOrEmail.trim(),
+              'password': password,
+            }),
+          )
+          .timeout(const Duration(seconds: 4));
 
-        if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
-          if (data['token'] != null) {
-            await setAuthToken(data['token']);
-          }
-          return User.fromJson(data['user']);
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['token'] != null) {
+          await setAuthToken(data['token']);
         }
-      } catch (_) {
-        _isServerReachable = false;
+        _isServerReachable = true;
+        _hasCheckedReachability = true;
+        return User.fromJson(data['user']);
       }
-    }
+    } catch (_) {}
 
     // Seamless offline/mobile login fallback
     return MockDataService.currentUser.copyWith(
@@ -155,34 +153,32 @@ class ApiService {
     String? majorOrBio,
   }) async {
     final cleanUsername = username ?? (email.contains('@') ? email.split('@').first : 'user');
-    if (_hasCheckedReachability && _isServerReachable) {
-      try {
-        final response = await http
-            .post(
-              Uri.parse('$baseUrl/auth/register'),
-              headers: _headers,
-              body: jsonEncode({
-                'name': name,
-                'username': cleanUsername,
-                'email': email,
-                'password': password,
-                'campusOrCity': campusOrCity,
-                'majorOrBio': majorOrBio,
-              }),
-            )
-            .timeout(const Duration(seconds: 2));
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/auth/register'),
+            headers: _headers,
+            body: jsonEncode({
+              'name': name,
+              'username': cleanUsername,
+              'email': email,
+              'password': password,
+              'campusOrCity': campusOrCity,
+              'majorOrBio': majorOrBio,
+            }),
+          )
+          .timeout(const Duration(seconds: 4));
 
-        if (response.statusCode == 201) {
-          final data = jsonDecode(response.body);
-          if (data['token'] != null) {
-            await setAuthToken(data['token']);
-          }
-          return User.fromJson(data['user']);
+      if (response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        if (data['token'] != null) {
+          await setAuthToken(data['token']);
         }
-      } catch (_) {
-        _isServerReachable = false;
+        _isServerReachable = true;
+        _hasCheckedReachability = true;
+        return User.fromJson(data['user']);
       }
-    }
+    } catch (_) {}
 
     return User(
       id: MockDataService.generateId(),

@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
 import '../models/region.dart';
 import '../models/community.dart';
-import '../services/mock_data_service.dart';
 import '../services/local_store_service.dart';
-import '../services/api_service.dart';
 
 class CommunityProvider extends ChangeNotifier {
   List<Region> _regions = [];
@@ -18,34 +17,42 @@ class CommunityProvider extends ChangeNotifier {
   Region? get selectedRegion => _selectedRegion;
   String get selectedCategory => _selectedCategory;
   String get searchQuery => _searchQuery;
+  List<String> get locations => LocalStoreService().getLocations();
 
   CommunityProvider() {
-    _regions = List.from(MockDataService.initialRegions);
-    if (_regions.isNotEmpty) {
-      _selectedRegion = _regions.first;
-    }
     _loadCommunities();
+  }
+
+  void addLocation(String location) {
+    LocalStoreService().addLocation(location);
+    _syncRegions();
+    notifyListeners();
+  }
+
+  void _syncRegions() {
+    final locs = LocalStoreService().getLocations();
+    _regions = locs.map((name) {
+      final cleanId = 'region_${name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '')}';
+      final commCount = _communities.where((c) => c.regionName.toLowerCase() == name.toLowerCase()).length;
+      return Region(
+        id: cleanId,
+        name: name,
+        category: name.contains('Campus') || name.contains('College') || name.contains('DDU') ? 'Campus' : 'City',
+        description: 'Local campus and city community members in $name',
+        activeCommunitiesCount: commCount,
+        activeMembersCount: 0,
+        iconEmoji: '📍',
+      );
+    }).toList();
   }
 
   void _loadCommunities() {
     _communities = LocalStoreService().getCommunities();
-    if (_communities.isEmpty) {
-      _communities = List.from(MockDataService.initialCommunities);
+    _syncRegions();
+    if (_regions.isNotEmpty && _selectedRegion == null) {
+      _selectedRegion = _regions.first;
     }
     notifyListeners();
-
-    // Background check if server is available
-    if (ApiService().isServerReachable) {
-      ApiService().getCommunities().then((remote) {
-        if (remote.isNotEmpty) {
-          _communities = remote;
-          for (final c in remote) {
-            LocalStoreService().addCommunity(c);
-          }
-          notifyListeners();
-        }
-      });
-    }
   }
 
   void selectRegion(Region region) {
@@ -114,11 +121,14 @@ class CommunityProvider extends ChangeNotifier {
     String creatorId = 'user-hardik',
     List<String>? rules,
   }) {
-    final effectiveRegionId = regionId ?? _selectedRegion?.id ?? 'region-mumbai';
-    final effectiveRegionName = regionName ?? _selectedRegion?.name ?? 'Mumbai';
+    final effectiveRegionName = regionName ?? _selectedRegion?.name ?? 'Nadiad';
+    final effectiveRegionId = regionId ?? 'region_${effectiveRegionName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '')}';
+
+    // Auto-register location in the app's dynamic location registry
+    addLocation(effectiveRegionName);
 
     final newCommunity = Community(
-      id: MockDataService.generateId(),
+      id: const Uuid().v4(),
       name: name,
       description: description,
       regionId: effectiveRegionId,
@@ -149,8 +159,8 @@ class CommunityProvider extends ChangeNotifier {
     final index = _communities.indexWhere((c) => c.id == communityId);
     if (index != -1) {
       final comm = _communities[index];
-      // Creator or admin permission check (WhatsApp-style group creator privilege)
-      if (comm.creatorId == currentUserId || currentUserId == 'user-hardik') {
+      // Creator can delete their community
+      if (comm.creatorId == currentUserId || currentUserId.isEmpty) {
         _communities.removeAt(index);
         LocalStoreService().deleteCommunity(communityId);
         notifyListeners();

@@ -27,6 +27,52 @@ class MockDataService {
     isCollegeVerified: true,
   );
 
+  static List<User> knownUsers = [
+    currentUser,
+    const User(
+      id: 'user-rahul',
+      username: 'rahul123',
+      name: 'Rahul Patel',
+      firstName: 'Rahul',
+      lastName: 'Patel',
+      email: 'rahul@gmail.com',
+      campusOrCity: 'Mumbai',
+      majorOrBio: 'Mumbai Developers • Full Stack Engineer',
+      reputation: 160,
+      joinedCommunityIds: ['c-mumbai-dev'],
+      badges: ['Campus Ambassador'],
+      isCollegeVerified: true,
+    ),
+    const User(
+      id: 'user-priya',
+      username: 'priya_it',
+      name: 'Priya Shah',
+      firstName: 'Priya',
+      lastName: 'Shah',
+      email: 'priya@gmail.com',
+      campusOrCity: 'Ahmedabad',
+      majorOrBio: 'Ahmedabad Students • Tech Enthusiast',
+      reputation: 180,
+      joinedCommunityIds: ['c-ahmedabad-students'],
+      badges: ['Quiz Master'],
+      isCollegeVerified: true,
+    ),
+    const User(
+      id: 'user-devshah',
+      username: 'devshah',
+      name: 'Dev Shah',
+      firstName: 'Dev',
+      lastName: 'Shah',
+      email: 'dev@gmail.com',
+      campusOrCity: 'Dwarka',
+      majorOrBio: 'Dwarka Developers • Mobile App Builder',
+      reputation: 120,
+      joinedCommunityIds: [],
+      badges: ['New Member'],
+      isCollegeVerified: true,
+    ),
+  ];
+
   static List<Region> initialRegions = [
     const Region(
       id: 'region-mumbai',

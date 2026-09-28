@@ -7,6 +7,7 @@ import '../models/community.dart';
 import '../models/chat_room.dart';
 import '../models/chat_message.dart';
 import '../models/friend_request.dart';
+import '../models/user.dart';
 import 'mock_data_service.dart';
 
 /// LocalStoreService delivers permanent offline persistence on physical mobile
@@ -22,11 +23,15 @@ class LocalStoreService {
   static const String _keyChatMessages = 'nt_local_chat_messages_v2';
   static const String _keyFriendRequests = 'nt_local_friend_requests_v2';
   static const String _keyUserFriends = 'nt_local_user_friends_v2';
+  static const String _keyLocations = 'nt_local_locations_v2';
+  static const String _keyUsers = 'nt_local_users_v2';
   static const String _keyCustomBackendUrl = 'nt_custom_backend_url';
 
   bool _initialized = false;
   List<Question> _questions = [];
   List<Community> _communities = [];
+  List<String> _locations = [];
+  List<User> _users = [];
   List<ChatRoom> _chatRooms = [];
   Map<String, List<ChatMessage>> _messages = {};
   List<FriendRequest> _friendRequests = [];
@@ -51,27 +56,49 @@ class LocalStoreService {
         final list = jsonDecode(qStr) as List<dynamic>;
         _questions = list.map((item) => Question.fromJson(item as Map<String, dynamic>)).toList();
       } else {
-        _questions = List.from(MockDataService.initialQuestions);
+        _questions = [];
         _persistQuestions();
       }
 
-      // 3. Load Communities (v4 with city-based communities)
+      // 3. Load Communities (User-created communities only, purge fake mock communities)
       final cStr = prefs.getString(_keyCommunities);
       if (cStr != null && cStr.isNotEmpty) {
         final list = jsonDecode(cStr) as List<dynamic>;
-        _communities = list.map((item) => Community.fromJson(item as Map<String, dynamic>)).toList();
+        _communities = list
+            .map((item) => Community.fromJson(item as Map<String, dynamic>))
+            .where((c) => !c.id.startsWith('c') && c.memberCount < 100)
+            .toList();
       } else {
-        _communities = List.from(MockDataService.initialCommunities);
-        _persistCommunities();
+        _communities = [];
+      }
+      _persistCommunities();
+
+      // 4. Load Locations (Dynamic campus / city locations)
+      final locStr = prefs.getString(_keyLocations);
+      if (locStr != null && locStr.isNotEmpty) {
+        final list = jsonDecode(locStr) as List<dynamic>;
+        _locations = list.map((e) => e.toString()).toList();
+      } else {
+        _locations = ['Nadiad', 'Ahmedabad', 'Mumbai', 'Dwarka'];
+        _persistLocations();
       }
 
-      // 4. Load Chat Rooms
+      // 5. Load Registered Users
+      final uStr = prefs.getString(_keyUsers);
+      if (uStr != null && uStr.isNotEmpty) {
+        final list = jsonDecode(uStr) as List<dynamic>;
+        _users = list.map((item) => User.fromJson(item as Map<String, dynamic>)).toList();
+      } else {
+        _users = [];
+      }
+
+      // 6. Load Chat Rooms
       final rStr = prefs.getString(_keyChatRooms);
       if (rStr != null && rStr.isNotEmpty) {
         final list = jsonDecode(rStr) as List<dynamic>;
         _chatRooms = list.map((item) => ChatRoom.fromJson(item as Map<String, dynamic>)).toList();
       } else {
-        _chatRooms = List.from(MockDataService.initialChatRooms);
+        _chatRooms = [];
         _persistChatRooms();
       }
 
@@ -87,12 +114,6 @@ class LocalStoreService {
         });
       } else {
         _messages = {};
-        for (final m in MockDataService.initialMessages) {
-          if (!_messages.containsKey(m.roomId)) {
-            _messages[m.roomId] = [];
-          }
-          _messages[m.roomId]!.add(m);
-        }
         _persistMessages();
       }
 
@@ -102,7 +123,7 @@ class LocalStoreService {
         final list = jsonDecode(frStr) as List<dynamic>;
         _friendRequests = list.map((item) => FriendRequest.fromJson(item as Map<String, dynamic>)).toList();
       } else {
-        _friendRequests = List.from(MockDataService.initialFriendRequests);
+        _friendRequests = [];
         _persistFriendRequests();
       }
 
@@ -112,11 +133,7 @@ class LocalStoreService {
         final map = jsonDecode(ufStr) as Map<String, dynamic>;
         _userFriends = map.map((k, v) => MapEntry(k, List<String>.from(v as List<dynamic>)));
       } else {
-        _userFriends = {
-          'hardik_07': ['devshah'],
-          'hardik': ['devshah'],
-          'devshah': ['hardik_07', 'hardik'],
-        };
+        _userFriends = {};
         _persistUserFriends();
       }
 
@@ -243,6 +260,27 @@ class LocalStoreService {
       );
       _persistCommunities();
     }
+  }
+
+  // --- Locations ---
+
+  List<String> getLocations() => List<String>.from(_locations);
+
+  void addLocation(String rawLocation) {
+    final trimmed = rawLocation.trim();
+    if (trimmed.isEmpty) return;
+    final exists = _locations.any((l) => l.toLowerCase() == trimmed.toLowerCase());
+    if (!exists) {
+      _locations.add(trimmed);
+      _persistLocations();
+    }
+  }
+
+  Future<void> _persistLocations() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_keyLocations, jsonEncode(_locations));
+    } catch (_) {}
   }
 
   // --- Chat ---
@@ -529,6 +567,42 @@ class LocalStoreService {
       await prefs.setString(_keyUserFriends, jsonEncode(_userFriends));
     } catch (e) {
       debugPrint('[LocalStore] Persist user friends error: $e');
+    }
+  }
+
+  // --- Registered Users ---
+
+  List<User> getRegisteredUsers() => List.unmodifiable(_users);
+
+  void saveUser(User user) {
+    final idx = _users.indexWhere((u) =>
+        u.id == user.id ||
+        u.username.toLowerCase() == user.username.toLowerCase());
+    if (idx != -1) {
+      _users[idx] = user;
+    } else {
+      _users.insert(0, user);
+    }
+    _persistUsers();
+  }
+
+  List<User> searchUsers(String query, {String? excludeUserId}) {
+    final clean = query.trim().toLowerCase().replaceAll('@', '');
+    if (clean.isEmpty) return [];
+    return _users.where((u) {
+      if (excludeUserId != null && u.id == excludeUserId) return false;
+      return u.username.toLowerCase().contains(clean) ||
+             u.name.toLowerCase().contains(clean);
+    }).toList();
+  }
+
+  Future<void> _persistUsers() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = _users.map((u) => u.toJson()).toList();
+      await prefs.setString(_keyUsers, jsonEncode(list));
+    } catch (e) {
+      debugPrint('[LocalStore] Persist users error: $e');
     }
   }
 }

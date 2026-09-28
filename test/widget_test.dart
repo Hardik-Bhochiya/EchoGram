@@ -21,7 +21,7 @@ void main() {
     await ApiService().init();
   });
 
-  testWidgets('NearTalk App smoke test', (WidgetTester tester) async {
+  testWidgets('NearTalk App renders LoginScreen when unauthenticated', (WidgetTester tester) async {
     await tester.pumpWidget(
       MultiProvider(
         providers: [
@@ -39,12 +39,11 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    // Verify that NearTalk home screen renders with personalized name and location sections
-    expect(find.text('NearTalk'), findsOneWidget);
-    expect(find.text('Welcome, Hardik Bhochiya'), findsOneWidget);
-    expect(find.text('@hardik_07'), findsOneWidget);
-    expect(find.text('Friend Requests'), findsOneWidget);
-    expect(find.text('Suggested Communities'), findsOneWidget);
-    expect(find.text('My Groups'), findsOneWidget);
+    // Verify that NearTalk unauthenticated state correctly shows Login screen
+    expect(find.text('NearTalk'), findsWidgets);
+    expect(find.text('EMAIL OR USERNAME'), findsOneWidget);
+    expect(find.text('PASSWORD'), findsOneWidget);
+    expect(find.text('Sign In'), findsOneWidget);
+    expect(find.text('Create one with @username'), findsOneWidget);
   });
 }

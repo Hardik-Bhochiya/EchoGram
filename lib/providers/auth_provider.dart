@@ -4,112 +4,87 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
 import '../models/friend_request.dart';
-import '../services/mock_data_service.dart';
-import '../services/api_service.dart';
-import '../services/socket_service.dart';
+import '../services/auth_service.dart';
 import '../services/local_store_service.dart';
+import '../services/api_service.dart';
+import '../services/mock_data_service.dart';
 
 enum AuthStatus { unauthenticated, authenticating, authenticated }
 
 class AuthProvider extends ChangeNotifier {
-  User? _currentUser = MockDataService.currentUser;
-  bool _isAuthenticated = true;
+  final AuthService _authService = AuthService();
+
+  User? _currentUser;
+  bool _isAuthenticated = false;
   bool _isGuest = false;
   bool _isLoading = false;
-  AuthStatus _status = AuthStatus.authenticated;
-  StreamSubscription? _frReceivedSub;
-  StreamSubscription? _frAcceptedSub;
+  String? _errorMessage;
+  AuthStatus _status = AuthStatus.unauthenticated;
+  StreamSubscription? _authSub;
 
   User? get currentUser => _currentUser;
   bool get isAuthenticated => _isAuthenticated;
   bool get isGuest => _isGuest;
   bool get isLoading => _isLoading;
+  String? get errorMessage => _errorMessage;
   AuthStatus get status => _status;
 
   AuthProvider() {
-    _initAuth();
-    _listenToFriendSocketEvents();
+    _knownUsers = [];
+    _initAuthListener();
   }
 
-  void _listenToFriendSocketEvents() {
-    _frReceivedSub = SocketService().onFriendRequestReceived.listen((data) {
-      try {
-        final req = FriendRequest.fromJson(data);
-        LocalStoreService().addFriendRequest(req);
-        notifyListeners();
-      } catch (_) {}
-    });
-
-    _frAcceptedSub = SocketService().onFriendRequestAccepted.listen((data) {
-      try {
-        final requestId = data['requestId'] as String?;
-        if (requestId != null) {
-          LocalStoreService().respondFriendRequest(requestId, 'accepted');
-          notifyListeners();
+  void _initAuthListener() {
+    // 1. If real Firebase configuration is present, listen to Firebase Auth
+    if (_authService.hasValidFirebaseConfig) {
+      _authSub = _authService.authStateChanges.listen((fbUser) async {
+        if (fbUser != null) {
+          try {
+            final profile = await _authService.getUserProfile(fbUser.uid);
+            if (profile != null) {
+              _currentUser = profile;
+              _isAuthenticated = true;
+              _isGuest = false;
+              _status = AuthStatus.authenticated;
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setString('saved_user', jsonEncode(profile.toJson()));
+              notifyListeners();
+              return;
+            }
+          } catch (_) {}
         }
-      } catch (_) {}
-    });
+      });
+    }
+
+    // 2. Restore cached session from SharedPreferences
+    _loadSavedSession();
   }
 
-  Future<void> _initAuth() async {
+  Future<void> _loadSavedSession() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final userJson = prefs.getString('saved_user');
       if (userJson != null) {
         _currentUser = User.fromJson(jsonDecode(userJson));
         _isAuthenticated = true;
+        _isGuest = false;
         _status = AuthStatus.authenticated;
-        SocketService().joinUser(_currentUser!.id, _currentUser!.username);
         notifyListeners();
-      } else if (_currentUser != null) {
-        SocketService().joinUser(_currentUser!.id, _currentUser!.username);
       }
     } catch (_) {}
   }
 
-  final List<User> _knownUsers = [
-    MockDataService.currentUser,
-    const User(
-      id: 'user-rahul',
-      username: 'rahul123',
-      name: 'Rahul Patel',
-      firstName: 'Rahul',
-      lastName: 'Patel',
-      email: 'rahul@gmail.com',
-      campusOrCity: 'Mumbai',
-      majorOrBio: 'Mumbai Developers • Full Stack Engineer',
-      reputation: 160,
-    ),
-    const User(
-      id: 'user-priya',
-      username: 'priya_it',
-      name: 'Priya Shah',
-      firstName: 'Priya',
-      lastName: 'Shah',
-      email: 'priya@gmail.com',
-      campusOrCity: 'Ahmedabad',
-      majorOrBio: 'Ahmedabad Students • Tech Enthusiast',
-      reputation: 180,
-    ),
-    const User(
-      id: 'user-devshah',
-      username: 'devshah',
-      name: 'Dev Shah',
-      firstName: 'Dev',
-      lastName: 'Shah',
-      email: 'dev@gmail.com',
-      campusOrCity: 'Dwarka',
-      majorOrBio: 'Dwarka Developers • Mobile App Builder',
-      reputation: 140,
-    ),
-  ];
+  void clearError() {
+    _errorMessage = null;
+    notifyListeners();
+  }
 
+  List<User> _knownUsers = [];
   List<User> get knownUsers => List.unmodifiable(_knownUsers);
 
-  bool isUsernameAvailable(String username) {
-    final sanitized = username.trim().toLowerCase().replaceAll('@', '');
-    if (sanitized.length < 3) return false;
-    return !_knownUsers.any((u) => u.username.toLowerCase() == sanitized);
+  void setKnownUsers(List<User> users) {
+    _knownUsers = users;
+    notifyListeners();
   }
 
   User? findUserByUsername(String query) {
@@ -121,54 +96,102 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// Check username availability against Firestore or Backend
+  Future<bool> checkUsernameAvailable(String username) async {
+    final clean = username.trim().toLowerCase().replaceAll('@', '');
+    if (clean.length < 3) return false;
+
+    if (_authService.hasValidFirebaseConfig) {
+      return await _authService.checkUsernameAvailable(clean);
+    }
+    return await ApiService().checkUsernameAvailable(clean);
+  }
+
+  /// Legacy synchronous helper for backward compatibility
+  bool isUsernameAvailable(String username) {
+    final sanitized = username.trim().toLowerCase().replaceAll('@', '');
+    return sanitized.length >= 3;
+  }
+
+  /// Smart Multi-Backend Login (Firebase -> Node.js/MongoDB -> Demo Profile)
   Future<bool> login(String usernameOrEmail, String password) async {
     _isLoading = true;
+    _errorMessage = null;
     _status = AuthStatus.authenticating;
     notifyListeners();
 
-    final input = usernameOrEmail.trim().toLowerCase().replaceAll('@', '');
-
     try {
-      final user = await ApiService().login(usernameOrEmail, password);
+      User? user;
+
+      String? lastAuthError;
+
+      // 1. Try Firebase Auth (if connected with a valid project)
+      if (_authService.hasValidFirebaseConfig) {
+        try {
+          user = await _authService.login(usernameOrEmail, password);
+        } catch (e) {
+          lastAuthError = e.toString().replaceFirst('Exception: ', '');
+          debugPrint('Firebase login notice: $e');
+        }
+      }
+
+      // 2. Try Node.js + Express + MongoDB Backend API
+      if (user == null) {
+        try {
+          user = await ApiService().login(usernameOrEmail, password);
+        } catch (e) {
+          debugPrint('ApiService login notice: $e');
+        }
+      }
+
+      // 3. If real Firebase returned an authentication error, surface it directly
+      if (user == null && lastAuthError != null) {
+        if (!lastAuthError.contains('not activated') &&
+            !lastAuthError.contains('disabled in your Firebase') &&
+            !lastAuthError.contains('CONFIGURATION_NOT_FOUND')) {
+          throw Exception(lastAuthError);
+        }
+      }
+
+      // 4. Session recovery for known registered local users
+      if (user == null) {
+        final clean = usernameOrEmail.trim().toLowerCase().replaceAll('@', '');
+        final matches = _knownUsers.where(
+          (u) => u.username.toLowerCase() == clean || u.email.toLowerCase() == clean,
+        );
+
+        if (matches.isNotEmpty) {
+          user = matches.first;
+        }
+      }
+
       if (user != null) {
         _currentUser = user;
         _isAuthenticated = true;
         _isGuest = false;
         _status = AuthStatus.authenticated;
+        _isLoading = false;
+
+        LocalStoreService().saveUser(user);
 
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('saved_user', jsonEncode(user.toJson()));
 
-        _isLoading = false;
         notifyListeners();
         return true;
       }
-    } catch (_) {}
 
-    // Match against known users by username or email
-    final matched = _knownUsers.firstWhere(
-      (u) => u.username.toLowerCase() == input || u.email.toLowerCase() == input,
-      orElse: () => MockDataService.currentUser.copyWith(
-        username: input.contains('@') ? input.split('@').first : input,
-        name: input.contains('@') ? input.split('@').first : input,
-        email: input.contains('@') ? input : '$input@ddu.ac.in',
-      ),
-    );
-
-    _currentUser = matched;
-    _isAuthenticated = true;
-    _isGuest = false;
-    _status = AuthStatus.authenticated;
-    _isLoading = false;
-
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('saved_user', jsonEncode(_currentUser!.toJson()));
-    SocketService().joinUser(_currentUser!.id, _currentUser!.username);
-
-    notifyListeners();
-    return true;
+      throw Exception('Invalid email/username or password.');
+    } catch (e) {
+      _isLoading = false;
+      _status = AuthStatus.unauthenticated;
+      _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      notifyListeners();
+      return false;
+    }
   }
 
+  /// Smart Multi-Backend Register (Firebase -> Node.js/MongoDB -> Local Record)
   Future<bool> register({
     required String name,
     required String username,
@@ -181,71 +204,103 @@ class AuthProvider extends ChangeNotifier {
     String? majorOrBio,
   }) async {
     _isLoading = true;
+    _errorMessage = null;
     _status = AuthStatus.authenticating;
     notifyListeners();
 
-    final resolvedCampus = campusOrCity ?? campus ?? 'DDU, Nadiad, Gujarat';
-    final cleanUsername = username.trim().toLowerCase().replaceAll('@', '');
-
-    final resolvedFirstName = firstName ?? (name.trim().split(' ').isNotEmpty ? name.trim().split(' ').first : 'Hardik');
-    final resolvedLastName = lastName ?? (name.trim().split(' ').length > 1 ? name.trim().split(' ').sublist(1).join(' ') : 'Bhochiya');
-
     try {
-      final user = await ApiService().register(
-        name: name,
-        email: email,
-        password: password,
-        campusOrCity: resolvedCampus,
-        majorOrBio: majorOrBio,
-      );
+      User? user;
 
-      if (user != null) {
-        _currentUser = user.copyWith(
-          username: cleanUsername,
-          firstName: resolvedFirstName,
-          lastName: resolvedLastName,
-        );
-        _isAuthenticated = true;
-        _isGuest = false;
-        _status = AuthStatus.authenticated;
+      // 1. Try Firebase Auth (if valid project configured)
+      if (_authService.hasValidFirebaseConfig) {
+        try {
+          user = await _authService.register(
+            name: name,
+            username: username,
+            firstName: firstName,
+            lastName: lastName,
+            email: email,
+            password: password,
+            campusOrCity: campusOrCity ?? campus,
+            majorOrBio: majorOrBio,
+          );
+        } catch (e) {
+          final errStr = e.toString().replaceFirst('Exception: ', '');
+          debugPrint('Firebase register notice: $e');
 
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('saved_user', jsonEncode(_currentUser!.toJson()));
-
-        _isLoading = false;
-        notifyListeners();
-        return true;
+          // If it's a user input issue (email exists, weak password, invalid format), report it
+          if (errStr.contains('already registered') ||
+              errStr.contains('already taken') ||
+              errStr.contains('too weak') ||
+              errStr.contains('invalid')) {
+            rethrow;
+          }
+          // If project-level (configuration-not-found / operation-not-allowed), proceed to Node.js/LocalStore
+        }
       }
-    } catch (_) {}
 
-    final newUser = User(
-      id: MockDataService.generateId(),
-      username: cleanUsername.isEmpty ? 'hardik' : cleanUsername,
-      name: name.trim().isEmpty ? '$resolvedFirstName $resolvedLastName' : name.trim(),
-      firstName: resolvedFirstName,
-      lastName: resolvedLastName,
-      email: email,
-      campusOrCity: resolvedCampus,
-      majorOrBio: majorOrBio ?? 'DDU Student',
-      reputation: 50,
-      joinedCommunityIds: [],
-      badges: [],
-      isCollegeVerified: email.endsWith('.ddu.ac.in') || email.contains('ddu'),
-    );
+      // 2. Try Node.js + Express + MongoDB Backend API
+      if (user == null) {
+        try {
+          user = await ApiService().register(
+            name: name,
+            username: username,
+            email: email,
+            password: password,
+            campusOrCity: campusOrCity ?? campus,
+            majorOrBio: majorOrBio,
+          );
+        } catch (e) {
+          debugPrint('ApiService register notice: $e');
+        }
+      }
 
-    _currentUser = newUser;
-    _knownUsers.add(newUser);
-    _isAuthenticated = true;
-    _isGuest = false;
-    _status = AuthStatus.authenticated;
-    _isLoading = false;
+      // 3. Fallback: Initialize local profile
+      if (user == null) {
+        final cleanUsername = username.trim().toLowerCase().replaceAll('@', '');
+        final parts = name.trim().split(' ');
+        final resolvedFirst = firstName ?? (parts.isNotEmpty ? parts.first : 'User');
+        final resolvedLast = lastName ?? (parts.length > 1 ? parts.sublist(1).join(' ') : '');
+        final city = campusOrCity ?? campus ?? 'DDU, Nadiad';
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('saved_user', jsonEncode(newUser.toJson()));
-    SocketService().joinUser(newUser.id, newUser.username);
+        user = User(
+          id: 'user_${DateTime.now().millisecondsSinceEpoch}',
+          username: cleanUsername,
+          name: name.trim(),
+          firstName: resolvedFirst,
+          lastName: resolvedLast,
+          email: email.trim(),
+          campusOrCity: city,
+          majorOrBio: majorOrBio ?? 'NearTalk Member',
+          reputation: 50,
+          joinedCommunityIds: const [],
+          badges: const ['Newcomer'],
+          isCollegeVerified: email.contains('ddu.ac.in') || email.contains('edu'),
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        );
+      }
 
-    notifyListeners();
-    return true;
+      _currentUser = user;
+      _isAuthenticated = true;
+      _isGuest = false;
+      _status = AuthStatus.authenticated;
+      _isLoading = false;
+
+      LocalStoreService().saveUser(user);
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('saved_user', jsonEncode(user.toJson()));
+
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _isLoading = false;
+      _status = AuthStatus.unauthenticated;
+      _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      notifyListeners();
+      return false;
+    }
   }
 
   Future<bool> signUp({
@@ -283,6 +338,19 @@ class AuthProvider extends ChangeNotifier {
         majorOrBio: majorOrBio,
         avatarUrl: avatarUrl ?? _currentUser!.avatarUrl,
       );
+
+      try {
+        await _authService.updateProfile(
+          uid: _currentUser!.id,
+          name: name,
+          campusOrCity: campusOrCity,
+          majorOrBio: majorOrBio,
+          avatarUrl: avatarUrl,
+        );
+      } catch (_) {}
+
+      LocalStoreService().saveUser(_currentUser!);
+
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('saved_user', jsonEncode(_currentUser!.toJson()));
       notifyListeners();
@@ -300,7 +368,12 @@ class AuthProvider extends ChangeNotifier {
   }
 
   void continueAsGuest() {
-    _currentUser = null;
+    _currentUser = MockDataService.currentUser.copyWith(
+      id: 'guest_${DateTime.now().millisecondsSinceEpoch}',
+      name: 'Guest Explorer',
+      username: 'guest',
+      email: 'guest@neartalk.local',
+    );
     _isAuthenticated = true;
     _isGuest = true;
     _status = AuthStatus.authenticated;
@@ -312,53 +385,63 @@ class AuthProvider extends ChangeNotifier {
     _isAuthenticated = false;
     _isGuest = false;
     _status = AuthStatus.unauthenticated;
-    await ApiService().clearAuthToken();
+    try {
+      await _authService.signOut();
+    } catch (_) {}
+    try {
+      await ApiService().clearAuthToken();
+    } catch (_) {}
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('saved_user');
     notifyListeners();
   }
 
-  // --- Friends & Friend Requests ---
+  // --- Friends & Friend Requests Methods for UI Compatibility ---
+
+  String get _activeUsername => _currentUser?.username ?? 'hardik';
 
   List<User> getFriends() {
     if (_currentUser == null) return [];
-    final friendUsernames = LocalStoreService().getFriendUsernames(_currentUser!.username);
-    return _knownUsers.where((u) {
-      return friendUsernames.any((fu) => fu.toLowerCase() == u.username.toLowerCase());
+    final friendUsernames = LocalStoreService().getFriendUsernames(_activeUsername);
+    return friendUsernames.map((u) {
+      final existing = _knownUsers.where((k) => k.username.toLowerCase() == u.toLowerCase());
+      if (existing.isNotEmpty) return existing.first;
+      return User(
+        id: 'user_$u',
+        name: u,
+        username: u,
+        email: '$u@neartalk.local',
+        campusOrCity: 'Local',
+        createdAt: DateTime.now(),
+      );
     }).toList();
   }
 
   bool areFriends(String username) {
-    if (_currentUser == null) return false;
-    return LocalStoreService().areFriends(_currentUser!.username, username);
+    return LocalStoreService().areFriends(_activeUsername, username);
   }
 
   List<FriendRequest> getPendingIncomingRequests() {
-    if (_currentUser == null) return [];
-    return LocalStoreService().getPendingIncomingRequests(_currentUser!.username);
+    return LocalStoreService().getPendingIncomingRequests(_activeUsername);
   }
 
   List<FriendRequest> getPendingOutgoingRequests() {
-    if (_currentUser == null) return [];
-    return LocalStoreService().getPendingOutgoingRequests(_currentUser!.username);
+    return LocalStoreService().getPendingOutgoingRequests(_activeUsername);
   }
 
   bool isPendingOutgoing(String targetUsername) {
-    if (_currentUser == null) return false;
     final tUser = targetUsername.trim().toLowerCase().replaceAll('@', '');
     final outgoing = getPendingOutgoingRequests();
     return outgoing.any((r) => r.receiverUsername.trim().toLowerCase().replaceAll('@', '') == tUser && r.isPending);
   }
 
   bool isPendingIncoming(String targetUsername) {
-    if (_currentUser == null) return false;
     final tUser = targetUsername.trim().toLowerCase().replaceAll('@', '');
     final incoming = getPendingIncomingRequests();
     return incoming.any((r) => r.senderUsername.trim().toLowerCase().replaceAll('@', '') == tUser && r.isPending);
   }
 
   FriendRequest? getIncomingRequestFrom(String targetUsername) {
-    if (_currentUser == null) return null;
     final tUser = targetUsername.trim().toLowerCase().replaceAll('@', '');
     final incoming = getPendingIncomingRequests();
     try {
@@ -369,62 +452,34 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> cancelFriendRequest(String targetUsername) async {
-    if (_currentUser == null) return;
     final tUser = targetUsername.trim().toLowerCase().replaceAll('@', '');
-    LocalStoreService().cancelFriendRequest(_currentUser!.username, tUser);
-    SocketService().cancelFriendRequest(
-      requestId: '',
-      senderUsername: _currentUser!.username,
-      receiverUsername: tUser,
-    );
+    LocalStoreService().cancelFriendRequest(_activeUsername, tUser);
     notifyListeners();
   }
 
   Future<bool> sendFriendRequest(String targetUsername) async {
-    if (_currentUser == null) return false;
-    final targetUser = findUserByUsername(targetUsername);
-    if (targetUser == null) return false;
-
+    final senderName = _currentUser?.name ?? 'Hardik Bhochiya';
+    final senderUname = _activeUsername;
     final req = FriendRequest(
-      id: MockDataService.generateId(),
-      senderId: _currentUser!.id,
-      senderUsername: _currentUser!.username,
-      senderName: _currentUser!.name,
-      senderAvatar: _currentUser!.avatarUrl,
-      receiverId: targetUser.id,
-      receiverUsername: targetUser.username,
-      receiverName: targetUser.name,
+      id: 'req_${DateTime.now().millisecondsSinceEpoch}',
+      senderId: _currentUser?.id ?? 'user-hardik',
+      senderUsername: senderUname,
+      senderName: senderName,
+      senderAvatar: _currentUser?.avatarUrl,
+      receiverId: 'target_$targetUsername',
+      receiverUsername: targetUsername,
+      receiverName: targetUsername,
       status: 'pending',
       createdAt: DateTime.now(),
     );
 
     LocalStoreService().addFriendRequest(req);
-    SocketService().sendFriendRequest(req.toJson());
     notifyListeners();
     return true;
   }
 
   Future<void> respondFriendRequest(String requestId, String status) async {
-    if (_currentUser == null) return;
-    final reqs = LocalStoreService().getFriendRequests(_currentUser!.username);
-    final req = reqs.firstWhere((r) => r.id == requestId, orElse: () => FriendRequest(
-      id: requestId,
-      senderId: '',
-      senderUsername: '',
-      senderName: '',
-      receiverId: _currentUser!.id,
-      receiverUsername: _currentUser!.username,
-      receiverName: _currentUser!.name,
-      createdAt: DateTime.now(),
-    ));
-
     LocalStoreService().respondFriendRequest(requestId, status);
-    SocketService().respondFriendRequest(
-      requestId: requestId,
-      status: status,
-      senderUsername: req.senderUsername,
-      receiverUsername: req.receiverUsername,
-    );
     notifyListeners();
   }
 
@@ -436,8 +491,7 @@ class AuthProvider extends ChangeNotifier {
 
   @override
   void dispose() {
-    _frReceivedSub?.cancel();
-    _frAcceptedSub?.cancel();
+    _authSub?.cancel();
     super.dispose();
   }
 }

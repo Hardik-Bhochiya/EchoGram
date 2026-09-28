@@ -25,6 +25,17 @@ class ChatRoom {
     this.participantIds = const [],
   });
 
+  String get name => title;
+  bool get isCommunity => communityId != null || isGroup;
+  int get memberCount => participantIds.length;
+  String get formattedTime {
+    final now = DateTime.now();
+    final diff = now.difference(lastMessageTime);
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m';
+    if (diff.inHours < 24) return '${lastMessageTime.hour}:${lastMessageTime.minute.toString().padLeft(2, "0")}';
+    return '${lastMessageTime.day}/${lastMessageTime.month}';
+  }
+
   ChatRoom copyWith({
     String? id,
     String? title,

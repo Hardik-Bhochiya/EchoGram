@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const Community = require('../models/Community');
 const { Question } = require('../models/Question');
+const User = require('../models/User');
 const store = require('../controllers/store');
 
 let isConnected = false;
@@ -45,6 +46,29 @@ const seedDatabaseIfEmpty = async () => {
         });
       }
       console.log('[Database] MongoDB seed completed successfully!');
+    }
+
+    const userCount = await User.countDocuments();
+    if (userCount <= 1) {
+      console.log('[Database] Seeding default campus users into MongoDB...');
+      for (const u of store.users) {
+        const exists = await User.findOne({ username: u.username });
+        if (!exists) {
+          await User.create({
+            name: u.name,
+            username: u.username,
+            email: u.email,
+            password: 'password123',
+            campusOrCity: u.campusOrCity,
+            majorOrBio: u.majorOrBio,
+            reputation: u.reputation,
+            joinedCommunityIds: u.joinedCommunityIds,
+            badges: u.badges,
+            isCollegeVerified: u.isCollegeVerified,
+          });
+        }
+      }
+      console.log('[Database] Campus users seeded into MongoDB!');
     }
   } catch (err) {
     console.error('[Database Seed Error]', err.message);

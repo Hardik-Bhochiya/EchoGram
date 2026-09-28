@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/community.dart';
-import '../../models/region.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/community_provider.dart';
 import '../../widgets/community_card.dart';
@@ -151,26 +150,20 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
   void _showCreateCommunityDialog() {
     final communityProvider = context.read<CommunityProvider>();
     final regions = communityProvider.regions;
-    Region selectedRegion = communityProvider.selectedRegion ?? (regions.isNotEmpty ? regions.first : const Region(
-      id: 'region-mumbai',
-      name: 'Mumbai',
-      category: 'City',
-      description: 'Mumbai metro',
-      activeCommunitiesCount: 12,
-      activeMembersCount: 5400,
-      iconEmoji: '🏙️',
-    ));
+    String selectedRegionName = communityProvider.selectedRegion?.name ?? (regions.isNotEmpty ? regions.first.name : 'Nadiad');
 
     final nameController = TextEditingController();
     final descController = TextEditingController();
-    final locationSpotController = TextEditingController(text: '${selectedRegion.name} Tech Spot');
-    final rule1Controller = TextEditingController(text: '1. Respect all members');
-    final rule2Controller = TextEditingController(text: '2. No spam or promotions');
-    final rule3Controller = TextEditingController(text: '3. No abusive language');
-    final rule4Controller = TextEditingController(text: '4. Stay on topic');
+    final customLocationController = TextEditingController();
+    final locationSpotController = TextEditingController();
+    final rule1Controller = TextEditingController();
+    final rule2Controller = TextEditingController();
+    final rule3Controller = TextEditingController();
+    final rule4Controller = TextEditingController();
 
     String selectedCategory = 'Tech & Dev';
     String selectedEmoji = '💻';
+    bool isCustomLocation = false;
     final emojis = ['💻', '📚', '🚀', '📸', '🏏', '🎓', '🎭', '🌊', '🏛️', '⚽'];
 
     showModalBottomSheet(
@@ -216,48 +209,88 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
                     ),
                     const SizedBox(height: 14),
 
-                    // City Selection Dropdown
-                    const Text(
-                      'City / Location Category',
-                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF8B949E)),
+                    // City / Location Selection Dropdown & Custom Option
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'City / Location / College',
+                          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF8B949E)),
+                        ),
+                        GestureDetector(
+                          onTap: () {
+                            setModalState(() {
+                              isCustomLocation = !isCustomLocation;
+                            });
+                          },
+                          child: Text(
+                            isCustomLocation ? 'Select from list' : '+ Add New Location',
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF58A6FF)),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF21262D),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFF30363D)),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: selectedRegion.name,
-                          dropdownColor: const Color(0xFF21262D),
-                          style: const TextStyle(color: Color(0xFFF0F6FC), fontSize: 13.5),
-                          isExpanded: true,
-                          items: regions.map((r) {
-                            return DropdownMenuItem<String>(
-                              value: r.name,
-                              child: Row(
-                                children: [
-                                  Text(r.iconEmoji, style: const TextStyle(fontSize: 16)),
-                                  const SizedBox(width: 8),
-                                  Text(r.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                                ],
-                              ),
-                            );
-                          }).toList(),
-                          onChanged: (val) {
-                            if (val != null) {
-                              setModalState(() {
-                                selectedRegion = regions.firstWhere((r) => r.name == val);
-                                locationSpotController.text = '$val Hub';
-                              });
-                            }
-                          },
+                    if (!isCustomLocation)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF21262D),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFF30363D)),
                         ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: regions.any((r) => r.name == selectedRegionName)
+                                ? selectedRegionName
+                                : (regions.isNotEmpty ? regions.first.name : null),
+                            dropdownColor: const Color(0xFF21262D),
+                            style: const TextStyle(color: Color(0xFFF0F6FC), fontSize: 13.5),
+                            isExpanded: true,
+                            items: [
+                              ...regions.map((r) {
+                                return DropdownMenuItem<String>(
+                                  value: r.name,
+                                  child: Row(
+                                    children: [
+                                      Text(r.iconEmoji, style: const TextStyle(fontSize: 16)),
+                                      const SizedBox(width: 8),
+                                      Text(r.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                                    ],
+                                  ),
+                                );
+                              }),
+                              const DropdownMenuItem<String>(
+                                value: '__ADD_NEW__',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.add_location_alt_rounded, color: Color(0xFF238636), size: 16),
+                                    SizedBox(width: 8),
+                                    Text('+ Add New Location / College...', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF238636))),
+                                  ],
+                                ),
+                              ),
+                            ],
+                            onChanged: (val) {
+                              if (val == '__ADD_NEW__') {
+                                setModalState(() => isCustomLocation = true);
+                              } else if (val != null) {
+                                setModalState(() {
+                                  selectedRegionName = val;
+                                  locationSpotController.text = '$val Hub';
+                                });
+                              }
+                            },
+                          ),
+                        ),
+                      )
+                    else
+                      CustomTextField(
+                        controller: customLocationController,
+                        labelText: 'Location / College Name',
+                        hintText: 'e.g. Pune, DDU Nadiad, IIT Bombay',
+                        prefixIcon: Icons.add_location_alt_rounded,
                       ),
-                    ),
                     const SizedBox(height: 14),
 
                     // Emoji selector
@@ -291,14 +324,14 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
                     CustomTextField(
                       controller: nameController,
                       labelText: 'Community Name',
-                      hintText: 'e.g. Mumbai AI Builders, Dwarka Coders',
+                      hintText: 'e.g. Pune Coders, DDU Robotics Club',
                     ),
                     const SizedBox(height: 12),
 
                     CustomTextField(
                       controller: locationSpotController,
                       labelText: 'Location Spot / Landmark',
-                      hintText: 'e.g. BKC, SG Highway, DDU Campus',
+                      hintText: 'e.g. Campus Hub, Main Auditorium',
                       prefixIcon: Icons.place_rounded,
                     ),
                     const SizedBox(height: 12),
@@ -353,9 +386,13 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
                       onPressed: () {
                         if (nameController.text.trim().isNotEmpty) {
                           final currentUserId = ctx.read<AuthProvider>().currentUser?.id ?? 'user-hardik';
+                          final effectiveLocation = (isCustomLocation && customLocationController.text.trim().isNotEmpty)
+                              ? customLocationController.text.trim()
+                              : selectedRegionName;
+
                           final spot = locationSpotController.text.trim().isNotEmpty
                               ? locationSpotController.text.trim()
-                              : '${selectedRegion.name} Spot';
+                              : '$effectiveLocation Spot';
 
                           final rules = [
                             rule1Controller.text.trim(),
@@ -370,8 +407,7 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
                             category: selectedCategory,
                             iconEmoji: selectedEmoji,
                             bannerColorHex: 0xFF58A6FF,
-                            regionId: selectedRegion.id,
-                            regionName: selectedRegion.name,
+                            regionName: effectiveLocation,
                             locationSpot: spot,
                             creatorId: currentUserId,
                             rules: rules.isNotEmpty ? rules : null,
@@ -379,7 +415,7 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
                           Navigator.pop(ctx);
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text('Created "${nameController.text.trim()}" in ${selectedRegion.name}! 🎉'),
+                              content: Text('Created "${nameController.text.trim()}" in $effectiveLocation! 🎉'),
                               backgroundColor: const Color(0xFF238636),
                             ),
                           );
@@ -685,6 +721,13 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
             ),
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showCreateCommunityDialog,
+        backgroundColor: const Color(0xFF238636),
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.group_add_rounded),
+        label: const Text('Create Community', style: TextStyle(fontWeight: FontWeight.bold)),
       ),
     );
   }

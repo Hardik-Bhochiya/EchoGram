@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 class FriendRequest {
   final String id;
   final String senderId;
@@ -7,8 +9,9 @@ class FriendRequest {
   final String receiverId;
   final String receiverUsername;
   final String receiverName;
-  final String status; // 'pending', 'accepted', 'declined'
+  final String status; // 'pending', 'accepted', 'declined', 'cancelled'
   final DateTime createdAt;
+  final DateTime? updatedAt;
 
   const FriendRequest({
     required this.id,
@@ -21,11 +24,13 @@ class FriendRequest {
     required this.receiverName,
     this.status = 'pending',
     required this.createdAt,
+    this.updatedAt,
   });
 
   bool get isPending => status == 'pending';
   bool get isAccepted => status == 'accepted';
   bool get isDeclined => status == 'declined';
+  bool get isCancelled => status == 'cancelled';
 
   FriendRequest copyWith({
     String? id,
@@ -38,6 +43,7 @@ class FriendRequest {
     String? receiverName,
     String? status,
     DateTime? createdAt,
+    DateTime? updatedAt,
   }) {
     return FriendRequest(
       id: id ?? this.id,
@@ -50,6 +56,7 @@ class FriendRequest {
       receiverName: receiverName ?? this.receiverName,
       status: status ?? this.status,
       createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 
@@ -65,10 +72,17 @@ class FriendRequest {
       'receiverName': receiverName,
       'status': status,
       'createdAt': createdAt.toIso8601String(),
+      'updatedAt': updatedAt?.toIso8601String(),
     };
   }
 
   factory FriendRequest.fromJson(Map<String, dynamic> json) {
+    DateTime parseDate(dynamic val) {
+      if (val is Timestamp) return val.toDate();
+      if (val is String) return DateTime.tryParse(val) ?? DateTime.now();
+      return DateTime.now();
+    }
+
     return FriendRequest(
       id: json['id'] as String? ?? '',
       senderId: json['senderId'] as String? ?? '',
@@ -79,9 +93,15 @@ class FriendRequest {
       receiverUsername: json['receiverUsername'] as String? ?? '',
       receiverName: json['receiverName'] as String? ?? '',
       status: json['status'] as String? ?? 'pending',
-      createdAt: json['createdAt'] != null
-          ? DateTime.tryParse(json['createdAt'].toString()) ?? DateTime.now()
-          : DateTime.now(),
+      createdAt: parseDate(json['createdAt']),
+      updatedAt: json['updatedAt'] != null ? parseDate(json['updatedAt']) : null,
     );
+  }
+
+  factory FriendRequest.fromFirestore(Map<String, dynamic> data, String docId) {
+    return FriendRequest.fromJson({
+      ...data,
+      'id': docId,
+    });
   }
 }

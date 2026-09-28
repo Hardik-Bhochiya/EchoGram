@@ -1,0 +1,15 @@
+{
+  "name": "neartalk",
+  "version": "1.0.0",
+  "description": "NearTalk - Full Stack Campus & Region-Based Social Platform",
+  "scripts": {
+    "dev": "npm --prefix server run dev",
+    "start": "npm --prefix server start",
+    "server": "npm --prefix server run dev",
+    "server:test": "npm --prefix server test",
+    "install:all": "npm --prefix server install && flutter pub get",
+    "flutter:chrome": "flutter run -d chrome",
+    "flutter:edge": "flutter run -d edge",
+    "flutter:windows": "flutter run -d windows"
+  }
+}

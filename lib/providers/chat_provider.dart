@@ -31,9 +31,6 @@ class ChatProvider extends ChangeNotifier {
   void _initChat() {
     // 1. Immediately load rooms from local storage
     _rooms = LocalStoreService().getChatRooms();
-    if (_rooms.isEmpty) {
-      _rooms = List.from(MockDataService.initialChatRooms);
-    }
     notifyListeners();
 
     // 2. Connect to WebSocket if online
@@ -287,9 +284,7 @@ class ChatProvider extends ChangeNotifier {
       if (localMsgs.isNotEmpty) {
         _messages[roomId] = localMsgs;
       } else {
-        _messages[roomId] = List.from(
-          MockDataService.initialMessages.where((m) => m.roomId == roomId),
-        );
+        _messages[roomId] = [];
       }
 
       if (ApiService().isServerReachable) {
