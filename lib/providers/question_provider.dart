@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/question.dart';
 import '../models/reply.dart';
 import '../models/user.dart';
@@ -13,6 +16,7 @@ class QuestionProvider extends ChangeNotifier {
   String _searchQuery = '';
   String _sortFilter = 'Recent';
   bool _isLoading = false;
+  StreamSubscription? _firestoreSub;
 
   List<Question> get questions => _questions;
   String get selectedTag => _selectedTag;
@@ -33,6 +37,33 @@ class QuestionProvider extends ChangeNotifier {
     _loadQuestions();
   }
 
+  void _initFirestoreListener() {
+    if (Firebase.apps.isEmpty) return;
+    try {
+      _firestoreSub?.cancel();
+      _firestoreSub = FirebaseFirestore.instance
+          .collection('questions')
+          .snapshots()
+          .listen((snap) {
+        if (snap.docs.isEmpty) return;
+        final firestoreList = <Question>[];
+        for (final doc in snap.docs) {
+          try {
+            final data = doc.data();
+            data['id'] = doc.id;
+            final q = Question.fromJson(data);
+            firestoreList.add(q);
+            LocalStoreService().updateQuestion(q);
+          } catch (_) {}
+        }
+        if (firestoreList.isNotEmpty) {
+          _questions = firestoreList;
+          notifyListeners();
+        }
+      }, onError: (_) {});
+    } catch (_) {}
+  }
+
   Future<void> _loadQuestions() async {
     _isLoading = true;
     // 1. Immediately load local persisted questions (zero delay, fully offline capable)
@@ -43,7 +74,10 @@ class QuestionProvider extends ChangeNotifier {
     _isLoading = false;
     notifyListeners();
 
-    // 2. If online server is reachable, check for remote updates in background
+    // 2. Real-time Cloud Firestore sync
+    _initFirestoreListener();
+
+    // 3. Optional local background fallback
     try {
       if (ApiService().isServerReachable) {
         final remoteQuestions = await ApiService().getQuestions();
@@ -176,7 +210,17 @@ class QuestionProvider extends ChangeNotifier {
     LocalStoreService().addQuestion(newQuestion);
     notifyListeners();
 
-    // Background sync with API
+    // 1. Direct Cloud Firestore write
+    if (Firebase.apps.isNotEmpty) {
+      try {
+        FirebaseFirestore.instance
+            .collection('questions')
+            .doc(newQuestion.id)
+            .set(newQuestion.toJson());
+      } catch (_) {}
+    }
+
+    // 2. Background sync fallback
     try {
       await ApiService().createQuestion(
         title: title,
@@ -204,6 +248,18 @@ class QuestionProvider extends ChangeNotifier {
       );
       LocalStoreService().toggleUpvote(questionId);
       notifyListeners();
+
+      // Cloud Firestore update
+      if (Firebase.apps.isNotEmpty) {
+        try {
+          FirebaseFirestore.instance
+              .collection('questions')
+              .doc(questionId)
+              .update({
+            'upvotes': FieldValue.increment(newUpvoted ? 1 : -1),
+          });
+        } catch (_) {}
+      }
 
       ApiService().toggleUpvote(questionId);
     }
@@ -238,6 +294,18 @@ class QuestionProvider extends ChangeNotifier {
       LocalStoreService().addReply(questionId, newReply);
       notifyListeners();
 
+      // Cloud Firestore update
+      if (Firebase.apps.isNotEmpty) {
+        try {
+          FirebaseFirestore.instance
+              .collection('questions')
+              .doc(questionId)
+              .update({
+            'replies': FieldValue.arrayUnion([newReply.toJson()]),
+          });
+        } catch (_) {}
+      }
+
       ApiService().addReply(
         questionId: questionId,
         content: content,
@@ -264,7 +332,25 @@ class QuestionProvider extends ChangeNotifier {
         _questions[qIndex] = q.copyWith(replies: updatedReplies);
         LocalStoreService().updateQuestion(_questions[qIndex]);
         notifyListeners();
+
+        // Cloud Firestore update
+        if (Firebase.apps.isNotEmpty) {
+          try {
+            FirebaseFirestore.instance
+                .collection('questions')
+                .doc(questionId)
+                .update({
+              'replies': updatedReplies.map((x) => x.toJson()).toList(),
+            });
+          } catch (_) {}
+        }
       }
     }
+  }
+
+  @override
+  void dispose() {
+    _firestoreSub?.cancel();
+    super.dispose();
   }
 }

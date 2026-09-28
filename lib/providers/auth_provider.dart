@@ -9,6 +9,7 @@ import '../services/local_store_service.dart';
 import '../services/api_service.dart';
 import '../services/mock_data_service.dart';
 import '../services/socket_service.dart';
+import '../services/friendship_service.dart';
 
 enum AuthStatus { unauthenticated, authenticating, authenticated }
 
@@ -130,21 +131,32 @@ class AuthProvider extends ChangeNotifier {
       User? user;
       String? lastAuthError;
 
-      // 1. Try Node.js + Express + MongoDB Backend API FIRST (Active Live Database)
-      try {
-        user = await ApiService().login(usernameOrEmail, password);
-      } catch (e) {
-        lastAuthError = e.toString().replaceFirst('Exception: ', '');
-        debugPrint('ApiService login notice: $e');
-      }
-
-      // 2. If Backend not available or returned no user, try Firebase Auth (if valid project configured)
-      if (user == null && _authService.hasValidFirebaseConfig) {
+      // 1. Try Firebase Auth FIRST (Cloud Firestore + Firebase Auth)
+      if (_authService.hasValidFirebaseConfig) {
         try {
           user = await _authService.login(usernameOrEmail, password);
         } catch (e) {
+          final msg = e.toString().replaceFirst('Exception: ', '');
+          debugPrint('Firebase login notice: $msg');
+          if (msg.contains('wrong-password') ||
+              msg.contains('user-not-found') ||
+              msg.contains('invalid-credential') ||
+              msg.contains('too-many-requests') ||
+              msg.contains('configuration-not-found') ||
+              msg.contains('Firebase Authentication is not activated')) {
+            throw Exception(msg);
+          }
+          lastAuthError = msg;
+        }
+      }
+
+      // 2. Fallback: Try Backend API
+      if (user == null) {
+        try {
+          user = await ApiService().login(usernameOrEmail, password);
+        } catch (e) {
           lastAuthError ??= e.toString().replaceFirst('Exception: ', '');
-          debugPrint('Firebase login notice: $e');
+          debugPrint('ApiService login notice: $e');
         }
       }
 
@@ -552,6 +564,25 @@ class AuthProvider extends ChangeNotifier {
     LocalStoreService().addFriendRequest(req);
     notifyListeners();
 
+    // 1. Firestore Cloud Database write
+    if (FriendshipService().isFirebaseInitialized && _currentUser != null) {
+      try {
+        final targetUser = findUserByUsername(targetUsername) ??
+            User(
+              id: 'target_$targetUsername',
+              name: targetUsername,
+              username: targetUsername,
+              email: '$targetUsername@neartalk.local',
+              campusOrCity: 'Campus',
+              createdAt: DateTime.now(),
+            );
+        await FriendshipService().sendFriendRequest(_currentUser!, targetUser);
+      } catch (e) {
+        debugPrint('[AuthProvider] Firestore sendFriendRequest notice: $e');
+      }
+    }
+
+    // 2. Also dispatch to API and WebSockets for local compatibility
     try {
       await ApiService().sendFriendRequest(
         senderId: currentUid,
@@ -570,6 +601,33 @@ class AuthProvider extends ChangeNotifier {
     LocalStoreService().respondFriendRequest(requestId, status);
     notifyListeners();
 
+    // 1. Firestore Cloud Database update
+    if (FriendshipService().isFirebaseInitialized && _currentUser != null) {
+      try {
+        if (status == 'accepted') {
+          final reqObj = LocalStoreService().getFriendRequests(_activeUsername).firstWhere(
+            (r) => r.id == requestId,
+            orElse: () => FriendRequest(
+              id: requestId,
+              senderId: senderUsername ?? 'sender',
+              senderUsername: senderUsername ?? 'sender',
+              senderName: senderUsername ?? 'sender',
+              receiverId: _currentUser!.id,
+              receiverUsername: _currentUser!.username,
+              receiverName: _currentUser!.name,
+              createdAt: DateTime.now(),
+            ),
+          );
+          await FriendshipService().acceptFriendRequest(reqObj, _currentUser!);
+        } else {
+          await FriendshipService().declineFriendRequest(requestId);
+        }
+      } catch (e) {
+        debugPrint('[AuthProvider] Firestore respondFriendRequest notice: $e');
+      }
+    }
+
+    // 2. Also dispatch to API and WebSockets
     try {
       await ApiService().respondFriendRequest(
         requestId,

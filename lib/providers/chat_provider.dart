@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
 import '../models/chat_message.dart';
 import '../models/chat_room.dart';
 import '../models/user.dart';
@@ -12,6 +14,7 @@ class ChatProvider extends ChangeNotifier {
   List<ChatRoom> _rooms = [];
   final Map<String, List<ChatMessage>> _messages = {};
   final Map<String, String?> _typingUser = {};
+  final Map<String, StreamSubscription> _roomFirestoreSubs = {};
   StreamSubscription<ChatMessage>? _messageSub;
   StreamSubscription<Map<String, dynamic>>? _typingSub;
   StreamSubscription<Map<String, dynamic>>? _editSub;
@@ -310,10 +313,47 @@ class ChatProvider extends ChangeNotifier {
 
   void joinRoom(String roomId, String userName) {
     SocketService().joinRoom(roomId, userName);
+    _listenToRoomFirestore(roomId);
+  }
+
+  void _listenToRoomFirestore(String roomId) {
+    if (Firebase.apps.isEmpty || _roomFirestoreSubs.containsKey(roomId)) return;
+    try {
+      final sub = FirebaseFirestore.instance
+          .collection('messages')
+          .where('roomId', isEqualTo: roomId)
+          .snapshots()
+          .listen((snap) {
+        if (snap.docs.isNotEmpty) {
+          if (!_messages.containsKey(roomId)) _messages[roomId] = [];
+          for (final doc in snap.docs) {
+            final msg = ChatMessage.fromJson({
+              ...doc.data(),
+              'id': doc.id,
+            });
+            final existingIdx = _messages[roomId]!.indexWhere((m) => m.id == msg.id);
+            if (existingIdx != -1) {
+              _messages[roomId]![existingIdx] = msg;
+            } else {
+              _messages[roomId]!.add(msg);
+            }
+            LocalStoreService().addMessage(msg);
+          }
+          // Sort messages chronologically
+          _messages[roomId]!.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+          notifyListeners();
+        }
+      }, onError: (err) {
+        debugPrint('[ChatProvider] Firestore messages stream notice: $err');
+      });
+      _roomFirestoreSubs[roomId] = sub;
+    } catch (_) {}
   }
 
   void leaveRoom(String roomId, String userName) {
     SocketService().leaveRoom(roomId, userName);
+    _roomFirestoreSubs[roomId]?.cancel();
+    _roomFirestoreSubs.remove(roomId);
   }
 
   void startTyping(String roomId, String userName) {
@@ -367,6 +407,17 @@ class ChatProvider extends ChangeNotifier {
         list[idx] = list[idx].copyWith(content: newContent, isEdited: true);
         LocalStoreService().editMessage(roomId, messageId, newContent);
 
+        // 1. Cloud Firestore update
+        if (Firebase.apps.isNotEmpty) {
+          try {
+            FirebaseFirestore.instance.collection('messages').doc(messageId).update({
+              'content': newContent,
+              'isEdited': true,
+              'updatedAt': FieldValue.serverTimestamp(),
+            });
+          } catch (_) {}
+        }
+
         // If it was the last message, update room subtitle
         if (idx == list.length - 1) {
           final roomIdx = _rooms.indexWhere((r) => r.id == roomId);
@@ -399,6 +450,20 @@ class ChatProvider extends ChangeNotifier {
           list.removeAt(idx);
         }
         LocalStoreService().deleteMessage(roomId, messageId, forEveryone: forEveryone, userId: userId);
+
+        // 1. Cloud Firestore delete / update
+        if (Firebase.apps.isNotEmpty) {
+          try {
+            if (forEveryone) {
+              FirebaseFirestore.instance.collection('messages').doc(messageId).update({
+                'content': '🚫 This message was deleted',
+                'isDeleted': true,
+              });
+            } else {
+              FirebaseFirestore.instance.collection('messages').doc(messageId).delete();
+            }
+          } catch (_) {}
+        }
         SocketService().deleteMessage(roomId, messageId, forEveryone);
         notifyListeners();
       }
@@ -491,6 +556,18 @@ class ChatProvider extends ChangeNotifier {
       LocalStoreService().addOrUpdateRoom(_rooms[index]);
     }
     notifyListeners();
+
+    // 1. Cloud Firestore write
+    if (Firebase.apps.isNotEmpty) {
+      try {
+        FirebaseFirestore.instance.collection('messages').doc(newMsg.id).set({
+          ...newMsg.toJson(),
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      } catch (e) {
+        debugPrint('[ChatProvider] Firestore sendMessage notice: $e');
+      }
+    }
 
     SocketService().sendMessage(
       id: newMsg.id,

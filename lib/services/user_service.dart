@@ -12,7 +12,7 @@ class UserService {
   bool get isFirebaseInitialized => Firebase.apps.isNotEmpty;
   FirebaseFirestore get _firestore => FirebaseFirestore.instance;
 
-  /// Unified multi-tier search across LocalStore, MongoDB Backend API, and Cloud Firestore
+  /// Unified search prioritizing Cloud Firestore with local cache
   Future<List<User>> searchUsers(String query, {String? currentUserId}) async {
     final clean = query.trim().replaceFirst(RegExp(r'^@'), '').trim();
     if (clean.isEmpty) return [];
@@ -25,18 +25,7 @@ class UserService {
       combined[u.username.toLowerCase()] = u;
     }
 
-    // 2. Query MongoDB / Node.js Backend API
-    try {
-      final apiResults = await ApiService().searchPeers(clean);
-      for (final u in apiResults) {
-        if (u.id != currentUserId && u.username.toLowerCase() != (currentUserId?.toLowerCase() ?? '')) {
-          combined[u.username.toLowerCase()] = u;
-          LocalStoreService().saveUser(u);
-        }
-      }
-    } catch (_) {}
-
-    // 3. Query Cloud Firestore only if Firebase user is logged in
+    // 2. Primary: Query Cloud Firestore
     if (isFirebaseInitialized) {
       try {
         final cleanLower = clean.toLowerCase();
@@ -44,9 +33,8 @@ class UserService {
             .collection('users')
             .where('normalizedUsername', isGreaterThanOrEqualTo: cleanLower)
             .where('normalizedUsername', isLessThanOrEqualTo: '$cleanLower\uf8ff')
-            .limit(15)
-            .get()
-            .timeout(const Duration(milliseconds: 700));
+            .limit(20)
+            .get();
 
         for (final doc in usernameSnap.docs) {
           final u = User.fromFirestore(doc.data(), doc.id);
@@ -58,10 +46,23 @@ class UserService {
       } catch (_) {}
     }
 
+    // 3. Fallback: Query MongoDB / Node.js Backend API if available
+    try {
+      if (ApiService().isServerReachable) {
+        final apiResults = await ApiService().searchPeers(clean);
+        for (final u in apiResults) {
+          if (u.id != currentUserId && u.username.toLowerCase() != (currentUserId?.toLowerCase() ?? '')) {
+            combined[u.username.toLowerCase()] = u;
+            LocalStoreService().saveUser(u);
+          }
+        }
+      }
+    } catch (_) {}
+
     return combined.values.toList();
   }
 
-  /// Get suggested classmates / peers across all tiers
+  /// Get suggested classmates / peers prioritizing Cloud Firestore
   Future<List<User>> getSuggestedUsers({String? currentUserId, int limit = 10}) async {
     final Map<String, User> combined = {};
 
@@ -73,23 +74,12 @@ class UserService {
       }
     }
 
-    // 2. MongoDB backend users
-    try {
-      final apiResults = await ApiService().searchPeers('');
-      for (final u in apiResults) {
-        if (u.id != currentUserId) {
-          combined[u.username.toLowerCase()] = u;
-          LocalStoreService().saveUser(u);
-        }
-      }
-    } catch (_) {}
-
-    // 3. Cloud Firestore users
+    // 2. Primary: Cloud Firestore users
     if (isFirebaseInitialized) {
       try {
         final snap = await _firestore
             .collection('users')
-            .limit(limit + 5)
+            .limit(limit + 10)
             .get();
 
         for (final doc in snap.docs) {
@@ -101,6 +91,19 @@ class UserService {
         }
       } catch (_) {}
     }
+
+    // 3. Fallback: MongoDB backend users
+    try {
+      if (ApiService().isServerReachable) {
+        final apiResults = await ApiService().searchPeers('');
+        for (final u in apiResults) {
+          if (u.id != currentUserId) {
+            combined[u.username.toLowerCase()] = u;
+            LocalStoreService().saveUser(u);
+          }
+        }
+      }
+    } catch (_) {}
 
     return combined.values.take(limit).toList();
   }

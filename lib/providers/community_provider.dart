@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
 import '../models/region.dart';
 import '../models/community.dart';
 import '../services/local_store_service.dart';
@@ -13,6 +15,7 @@ class CommunityProvider extends ChangeNotifier {
   String _selectedCategory = 'All';
   String _searchQuery = '';
   Timer? _syncTimer;
+  StreamSubscription? _firestoreSub;
   String? _activeUserIdentifier;
 
   List<Region> get regions => _regions;
@@ -25,8 +28,8 @@ class CommunityProvider extends ChangeNotifier {
 
   CommunityProvider() {
     _loadCommunities();
-    // Periodically poll backend for cross-device consistency
-    _syncTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+    _initFirestoreListener();
+    _syncTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       refreshCommunities(userIdentifier: _activeUserIdentifier);
     });
   }
@@ -34,7 +37,46 @@ class CommunityProvider extends ChangeNotifier {
   @override
   void dispose() {
     _syncTimer?.cancel();
+    _firestoreSub?.cancel();
     super.dispose();
+  }
+
+  void _initFirestoreListener() {
+    if (Firebase.apps.isEmpty) return;
+    try {
+      _firestoreSub = FirebaseFirestore.instance
+          .collection('communities')
+          .snapshots()
+          .listen((snap) {
+        if (snap.docs.isNotEmpty) {
+          final Map<String, Community> map = {};
+          final cleanUser = (_activeUserIdentifier ?? '').toLowerCase().replaceAll('@', '');
+
+          for (final doc in snap.docs) {
+            final data = doc.data();
+            final c = Community.fromJson({
+              ...data,
+              'id': doc.id,
+            });
+            final existingIdx = _communities.indexWhere((item) => item.id == c.id);
+            final wasJoined = existingIdx != -1 ? _communities[existingIdx].isJoined : false;
+            final isMember = cleanUser.isNotEmpty && c.members.any((m) => m.toLowerCase().replaceAll('@', '') == cleanUser);
+            final isJoined = c.isJoined || wasJoined || isMember;
+
+            final updated = c.copyWith(isJoined: isJoined);
+            map[c.id] = updated;
+            LocalStoreService().addCommunity(updated);
+            addLocation(c.regionName);
+          }
+
+          _communities = map.values.toList();
+          _syncRegions();
+          notifyListeners();
+        }
+      }, onError: (err) {
+        debugPrint('[CommunityProvider] Firestore communities notice: $err');
+      });
+    } catch (_) {}
   }
 
   void addLocation(String location) {
@@ -158,6 +200,27 @@ class CommunityProvider extends ChangeNotifier {
 
       final effUser = userIdentifier ?? _activeUserIdentifier;
       if (effUser != null && effUser.isNotEmpty) {
+        // 1. Cloud Firestore update
+        if (Firebase.apps.isNotEmpty) {
+          try {
+            final docRef = FirebaseFirestore.instance.collection('communities').doc(communityId);
+            if (newJoined) {
+              docRef.update({
+                'members': FieldValue.arrayUnion([effUser]),
+                'memberCount': FieldValue.increment(1),
+              });
+            } else {
+              docRef.update({
+                'members': FieldValue.arrayRemove([effUser]),
+                'memberCount': FieldValue.increment(-1),
+              });
+            }
+          } catch (e) {
+            debugPrint('[CommunityProvider] Firestore toggleJoin notice: $e');
+          }
+        }
+
+        // 2. Also notify API
         try {
           final updated = await ApiService().toggleJoinCommunity(communityId, userIdentifier: effUser);
           if (updated != null) {
@@ -189,7 +252,6 @@ class CommunityProvider extends ChangeNotifier {
     final effectiveRegionId = regionId ?? 'region_${effectiveRegionName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '')}';
     final cleanCreator = creatorId.toLowerCase().replaceAll('@', '');
 
-    // Auto-register location in the app's dynamic location registry
     addLocation(effectiveRegionName);
 
     final newCommunity = Community(
@@ -219,7 +281,22 @@ class CommunityProvider extends ChangeNotifier {
     LocalStoreService().addCommunity(newCommunity);
     notifyListeners();
 
-    // Persist to backend MongoDB
+    // 1. Cloud Firestore write
+    if (Firebase.apps.isNotEmpty) {
+      try {
+        FirebaseFirestore.instance
+            .collection('communities')
+            .doc(newCommunity.id)
+            .set({
+              ...newCommunity.toJson(),
+              'createdAt': FieldValue.serverTimestamp(),
+            });
+      } catch (e) {
+        debugPrint('[CommunityProvider] Firestore createCommunity notice: $e');
+      }
+    }
+
+    // 2. Also notify API
     ApiService().createCommunity(newCommunity).then((created) {
       if (created != null) {
         final idx = _communities.indexWhere((c) => c.id == newCommunity.id);
@@ -238,10 +315,18 @@ class CommunityProvider extends ChangeNotifier {
     final index = _communities.indexWhere((c) => c.id == communityId);
     if (index != -1) {
       final comm = _communities[index];
-      // Creator can delete their community
       if (comm.creatorId == currentUserId || currentUserId.isEmpty) {
         _communities.removeAt(index);
         LocalStoreService().deleteCommunity(communityId);
+
+        // 1. Cloud Firestore delete
+        if (Firebase.apps.isNotEmpty) {
+          try {
+            FirebaseFirestore.instance.collection('communities').doc(communityId).delete();
+          } catch (_) {}
+        }
+
+        // 2. Also notify API
         ApiService().deleteCommunity(communityId, currentUserId);
         notifyListeners();
         return true;

@@ -131,20 +131,19 @@ class CommunityDetailScreen extends StatelessWidget {
                   onPressed: () async {
                     final currentUserId = context.read<AuthProvider>().currentUser?.id ?? '';
                     await communityProvider.toggleJoinCommunity(liveCommunity.id, userIdentifier: currentUserId);
+                    if (!context.mounted) return;
                     final chatProvider = context.read<ChatProvider>();
                     final room = chatProvider.getOrCreateCommunityRoom(
                       liveCommunity.id,
                       liveCommunity.name,
                       liveCommunity.iconEmoji,
                     );
-                    if (context.mounted) {
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ChatConversationScreen(roomId: room.id),
-                        ),
-                      );
-                    }
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ChatConversationScreen(roomId: room.id),
+                      ),
+                    );
                   },
                   icon: const Icon(Icons.group_add_rounded, size: 18),
                   label: const Text('Join Community', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
