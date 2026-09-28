@@ -8,6 +8,7 @@ import '../services/auth_service.dart';
 import '../services/local_store_service.dart';
 import '../services/api_service.dart';
 import '../services/mock_data_service.dart';
+import '../services/socket_service.dart';
 
 enum AuthStatus { unauthenticated, authenticating, authenticated }
 
@@ -21,6 +22,8 @@ class AuthProvider extends ChangeNotifier {
   String? _errorMessage;
   AuthStatus _status = AuthStatus.unauthenticated;
   StreamSubscription? _authSub;
+  StreamSubscription? _frReceivedSub;
+  StreamSubscription? _frAcceptedSub;
 
   User? get currentUser => _currentUser;
   bool get isAuthenticated => _isAuthenticated;
@@ -31,6 +34,7 @@ class AuthProvider extends ChangeNotifier {
 
   AuthProvider() {
     _knownUsers = [];
+    _setupSocketListeners();
     _initAuthListener();
   }
 
@@ -69,6 +73,8 @@ class AuthProvider extends ChangeNotifier {
         _isAuthenticated = true;
         _isGuest = false;
         _status = AuthStatus.authenticated;
+        SocketService().joinUser(_currentUser!.id, _currentUser!.username);
+        syncFriendData();
         notifyListeners();
       }
     } catch (_) {}
@@ -165,6 +171,9 @@ class AuthProvider extends ChangeNotifier {
 
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('saved_user', jsonEncode(user.toJson()));
+
+        SocketService().joinUser(user.id, user.username);
+        syncFriendData();
 
         notifyListeners();
         return true;
@@ -298,6 +307,9 @@ class AuthProvider extends ChangeNotifier {
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('saved_user', jsonEncode(user.toJson()));
+
+      SocketService().joinUser(user.id, user.username);
+      syncFriendData();
 
       notifyListeners();
       return true;
@@ -458,6 +470,61 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  void _setupSocketListeners() {
+    _frReceivedSub?.cancel();
+    _frAcceptedSub?.cancel();
+
+    _frReceivedSub = SocketService().onFriendRequestReceived.listen((data) {
+      try {
+        final req = FriendRequest.fromJson(data);
+        LocalStoreService().addFriendRequest(req);
+        notifyListeners();
+      } catch (e) {
+        debugPrint('[AuthProvider] onFriendRequestReceived error: $e');
+      }
+    });
+
+    _frAcceptedSub = SocketService().onFriendRequestAccepted.listen((data) {
+      try {
+        final reqId = data['requestId'] as String?;
+        final sUser = data['senderUsername'] as String?;
+        final rUser = data['receiverUsername'] as String?;
+        if (reqId != null) {
+          LocalStoreService().respondFriendRequest(reqId, 'accepted');
+        }
+        if (sUser != null && rUser != null) {
+          LocalStoreService().addFriend(sUser, rUser);
+        }
+        notifyListeners();
+      } catch (e) {
+        debugPrint('[AuthProvider] onFriendRequestAccepted error: $e');
+      }
+    });
+  }
+
+  Future<void> syncFriendData() async {
+    if (_currentUser == null) return;
+    try {
+      final username = _currentUser!.username;
+      final rawReqs = await ApiService().getFriendRequests(username);
+      for (final r in rawReqs) {
+        final req = FriendRequest.fromJson(r);
+        LocalStoreService().addFriendRequest(req);
+      }
+
+      final friends = await ApiService().getFriends(username);
+      for (final f in friends) {
+        LocalStoreService().addFriend(username, f.username);
+        if (!_knownUsers.any((u) => u.username.toLowerCase() == f.username.toLowerCase())) {
+          _knownUsers.add(f);
+        }
+      }
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[AuthProvider] syncFriendData error: $e');
+    }
+  }
+
   Future<void> cancelFriendRequest(String targetUsername) async {
     final tUser = targetUsername.trim().toLowerCase().replaceAll('@', '');
     LocalStoreService().cancelFriendRequest(_activeUsername, tUser);
@@ -483,26 +550,40 @@ class AuthProvider extends ChangeNotifier {
     );
 
     LocalStoreService().addFriendRequest(req);
-    ApiService().sendFriendRequest(
-      senderId: currentUid,
-      senderUsername: senderUname,
-      senderName: senderName,
-      receiverUsername: targetUsername,
-      senderAvatar: _currentUser?.avatarUrl,
-    );
     notifyListeners();
+
+    try {
+      await ApiService().sendFriendRequest(
+        senderId: currentUid,
+        senderUsername: senderUname,
+        senderName: senderName,
+        receiverUsername: targetUsername,
+        senderAvatar: _currentUser?.avatarUrl,
+      );
+      SocketService().sendFriendRequest(req.toJson());
+    } catch (_) {}
+
     return true;
   }
 
   Future<void> respondFriendRequest(String requestId, String status, {String? senderUsername}) async {
     LocalStoreService().respondFriendRequest(requestId, status);
-    ApiService().respondFriendRequest(
-      requestId,
-      status,
-      senderUsername: senderUsername,
-      receiverUsername: _activeUsername,
-    );
     notifyListeners();
+
+    try {
+      await ApiService().respondFriendRequest(
+        requestId,
+        status,
+        senderUsername: senderUsername,
+        receiverUsername: _activeUsername,
+      );
+      SocketService().respondFriendRequest(
+        requestId: requestId,
+        status: status,
+        senderUsername: senderUsername ?? '',
+        receiverUsername: _activeUsername,
+      );
+    } catch (_) {}
   }
 
   Future<void> unfriend(String targetUsername) async {
@@ -517,10 +598,11 @@ class AuthProvider extends ChangeNotifier {
     await unfriend(targetUsername);
   }
 
-
   @override
   void dispose() {
     _authSub?.cancel();
+    _frReceivedSub?.cancel();
+    _frAcceptedSub?.cancel();
     super.dispose();
   }
 }

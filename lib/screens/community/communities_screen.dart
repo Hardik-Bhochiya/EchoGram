@@ -8,6 +8,7 @@ import '../../widgets/community_card.dart';
 import '../../widgets/custom_text_field.dart';
 import '../../widgets/primary_button.dart';
 import 'community_detail_screen.dart';
+import '../chat/chat_conversation_screen.dart';
 
 class CommunitiesScreen extends StatefulWidget {
   final bool isTab;
@@ -34,6 +35,11 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final currentUserId = context.read<AuthProvider>().currentUser?.id ?? '';
+      context.read<CommunityProvider>().refreshCommunities(userIdentifier: currentUserId);
+    });
   }
 
   @override
@@ -637,17 +643,42 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
                             community: community,
                             onDelete: isCreator ? () => _confirmDeleteCommunity(community) : null,
                             onTap: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => CommunityDetailScreen(communityId: community.id),
-                                ),
-                              );
+                              if (community.isJoined) {
+                                final chatProvider = context.read<ChatProvider>();
+                                final room = chatProvider.getOrCreateCommunityRoom(
+                                  community.id,
+                                  community.name,
+                                  community.iconEmoji,
+                                );
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => ChatConversationScreen(roomId: room.id),
+                                  ),
+                                );
+                              } else {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => CommunityDetailScreen(communityId: community.id),
+                                  ),
+                                );
+                              }
                             },
                             onJoinToggle: () {
                               if (community.isJoined) {
                                 _confirmLeaveCommunity(community);
                               } else {
-                                communityProvider.toggleJoinCommunity(community.id);
+                                communityProvider.toggleJoinCommunity(community.id, userIdentifier: currentUserId);
+                                final chatProvider = context.read<ChatProvider>();
+                                final room = chatProvider.getOrCreateCommunityRoom(
+                                  community.id,
+                                  community.name,
+                                  community.iconEmoji,
+                                );
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => ChatConversationScreen(roomId: room.id),
+                                  ),
+                                );
                               }
                             },
                           );
@@ -711,9 +742,15 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
                             community: community,
                             onDelete: isCreator ? () => _confirmDeleteCommunity(community) : null,
                             onTap: () {
+                              final chatProvider = context.read<ChatProvider>();
+                              final room = chatProvider.getOrCreateCommunityRoom(
+                                community.id,
+                                community.name,
+                                community.iconEmoji,
+                              );
                               Navigator.of(context).push(
                                 MaterialPageRoute(
-                                  builder: (_) => CommunityDetailScreen(communityId: community.id),
+                                  builder: (_) => ChatConversationScreen(roomId: room.id),
                                 ),
                               );
                             },

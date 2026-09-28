@@ -286,12 +286,48 @@ class ApiService {
     }
   }
 
-  // Communities: Get All
-  Future<List<Community>> getCommunities() async {
+  // Friends: Get Requests
+  Future<List<Map<String, dynamic>>> getFriendRequests(String username) async {
+    final clean = username.trim().toLowerCase().replaceAll('@', '');
     try {
-      final response = await http
-          .get(Uri.parse('$baseUrl/communities'), headers: _headers)
+      final res = await http
+          .get(Uri.parse('$baseUrl/friends/requests/$clean'), headers: _headers)
           .timeout(const Duration(seconds: 3));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        if (data['requests'] != null) {
+          return List<Map<String, dynamic>>.from(data['requests']);
+        }
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  // Friends: Get Friends list
+  Future<List<User>> getFriends(String username) async {
+    final clean = username.trim().toLowerCase().replaceAll('@', '');
+    try {
+      final res = await http
+          .get(Uri.parse('$baseUrl/friends/$clean'), headers: _headers)
+          .timeout(const Duration(seconds: 3));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        if (data['friends'] != null) {
+          return (data['friends'] as List).map((j) => User.fromJson(j)).toList();
+        }
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  // Communities: Get All
+  Future<List<Community>> getCommunities({String? userIdentifier}) async {
+    try {
+      final clean = (userIdentifier ?? '').trim().toLowerCase().replaceAll('@', '');
+      final uri = Uri.parse('$baseUrl/communities').replace(
+        queryParameters: clean.isNotEmpty ? {'username': clean, 'userId': clean} : null,
+      );
+      final response = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 4));
 
       if (response.statusCode == 200) {
         _isServerReachable = true;
@@ -303,6 +339,30 @@ class ApiService {
     } catch (_) {}
 
     return LocalStoreService().getCommunities();
+  }
+
+  // Communities: Toggle Join
+  Future<Community?> toggleJoinCommunity(String communityId, {required String userIdentifier}) async {
+    try {
+      final clean = userIdentifier.trim().toLowerCase().replaceAll('@', '');
+      final res = await http
+          .post(
+            Uri.parse('$baseUrl/communities/$communityId/join'),
+            headers: _headers,
+            body: jsonEncode({
+              'userId': clean,
+              'username': clean,
+            }),
+          )
+          .timeout(const Duration(seconds: 3));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        if (data['data'] != null) {
+          return Community.fromJson(data['data']);
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   // Communities: Create

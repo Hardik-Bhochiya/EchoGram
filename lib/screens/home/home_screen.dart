@@ -362,12 +362,27 @@ class HomeScreen extends StatelessWidget {
       ),
       child: InkWell(
         onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => CommunityDetailScreen(community: community),
-            ),
-          );
+          if (community.isJoined) {
+            final chatProvider = context.read<ChatProvider>();
+            final room = chatProvider.getOrCreateCommunityRoom(
+              community.id,
+              community.name,
+              community.iconEmoji,
+            );
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ChatConversationScreen(roomId: room.id),
+              ),
+            );
+          } else {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => CommunityDetailScreen(community: community),
+              ),
+            );
+          }
         },
         child: Row(
           children: [

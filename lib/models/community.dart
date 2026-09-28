@@ -13,6 +13,7 @@ class Community {
   final int bannerColorHex;
   final bool isJoined;
   final List<String> rules;
+  final List<String> members;
 
   const Community({
     required this.id,
@@ -35,6 +36,7 @@ class Community {
       'Privacy & Anonymity: Respect anonymity of posters. Never attempt to expose real identities.',
       'Academic & Campus Integrity: Abide by student conduct guidelines and community safety standards.',
     ],
+    this.members = const [],
   });
 
   Community copyWith({
@@ -52,6 +54,7 @@ class Community {
     int? bannerColorHex,
     bool? isJoined,
     List<String>? rules,
+    List<String>? members,
   }) {
     return Community(
       id: id ?? this.id,
@@ -68,6 +71,7 @@ class Community {
       bannerColorHex: bannerColorHex ?? this.bannerColorHex,
       isJoined: isJoined ?? this.isJoined,
       rules: rules ?? this.rules,
+      members: members ?? this.members,
     );
   }
 
@@ -87,6 +91,7 @@ class Community {
       'bannerColorHex': bannerColorHex,
       'isJoined': isJoined,
       'rules': rules,
+      'members': members,
     };
   }
 
@@ -106,6 +111,7 @@ class Community {
       bannerColorHex: json['bannerColorHex'] as int? ?? 0xFF4F46E5,
       isJoined: json['isJoined'] as bool? ?? false,
       rules: List<String>.from(json['rules'] ?? []),
+      members: List<String>.from(json['members'] ?? []),
     );
   }
 }

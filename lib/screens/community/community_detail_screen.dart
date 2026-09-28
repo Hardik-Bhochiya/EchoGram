@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/community.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/community_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../chat/chat_conversation_screen.dart';
@@ -127,20 +128,23 @@ class CommunityDetailScreen extends StatelessWidget {
                 width: double.infinity,
                 height: 46,
                 child: ElevatedButton.icon(
-                  onPressed: () {
-                    communityProvider.toggleJoinCommunity(liveCommunity.id);
+                  onPressed: () async {
+                    final currentUserId = context.read<AuthProvider>().currentUser?.id ?? '';
+                    await communityProvider.toggleJoinCommunity(liveCommunity.id, userIdentifier: currentUserId);
                     final chatProvider = context.read<ChatProvider>();
-                    chatProvider.getOrCreateCommunityRoom(
+                    final room = chatProvider.getOrCreateCommunityRoom(
                       liveCommunity.id,
                       liveCommunity.name,
                       liveCommunity.iconEmoji,
                     );
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Joined ${liveCommunity.name}! 🎉'),
-                        backgroundColor: const Color(0xFF238636),
-                      ),
-                    );
+                    if (context.mounted) {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ChatConversationScreen(roomId: room.id),
+                        ),
+                      );
+                    }
                   },
                   icon: const Icon(Icons.group_add_rounded, size: 18),
                   label: const Text('Join Community', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
@@ -164,7 +168,7 @@ class CommunityDetailScreen extends StatelessWidget {
                       liveCommunity.name,
                       liveCommunity.iconEmoji,
                     );
-                    Navigator.push(
+                    Navigator.pushReplacement(
                       context,
                       MaterialPageRoute(
                         builder: (_) => ChatConversationScreen(roomId: room.id),

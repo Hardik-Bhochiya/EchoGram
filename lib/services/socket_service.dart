@@ -12,6 +12,8 @@ class SocketService {
   io.Socket? _socket;
   bool _isConnected = false;
   static bool disabledForTests = false;
+  String? _registeredUserId;
+  String? _registeredUsername;
 
   final _messageController = StreamController<ChatMessage>.broadcast();
   final _typingController = StreamController<Map<String, dynamic>>.broadcast();
@@ -63,7 +65,7 @@ class SocketService {
             .setTransports(['websocket', 'polling'])
             .disableAutoConnect()
             .enableReconnection()
-            .setReconnectionAttempts(5)
+            .setReconnectionAttempts(10)
             .setReconnectionDelay(1500)
             .build(),
       );
@@ -73,6 +75,13 @@ class SocketService {
       _socket?.onConnect((_) {
         _isConnected = true;
         debugPrint('[SocketService] Connected to NearTalk WebSocket server at $socketUrl');
+        if (_registeredUserId != null || _registeredUsername != null) {
+          _socket?.emit('join_user', {
+            'userId': _registeredUserId ?? '',
+            'username': _registeredUsername ?? '',
+          });
+          debugPrint('[SocketService] Auto-joined user channel for $_registeredUsername on connect');
+        }
       });
 
       _socket?.onDisconnect((_) {
@@ -145,8 +154,15 @@ class SocketService {
   }
 
   void joinUser(String userId, String username) {
-    if (disabledForTests || !_isConnected) return;
+    _registeredUserId = userId;
+    _registeredUsername = username;
+    if (disabledForTests) return;
+    if (!_isConnected) {
+      connect();
+      return;
+    }
     _socket?.emit('join_user', {'userId': userId, 'username': username});
+    debugPrint('[SocketService] Emitted join_user for $username ($userId)');
   }
 
   void joinRoom(String roomId, String userName) {

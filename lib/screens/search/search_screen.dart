@@ -417,11 +417,19 @@ class _SearchScreenState extends State<SearchScreen> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
                     onPressed: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => CommunityDetailScreen(communityId: c.id)),
-                      );
+                      if (c.isJoined) {
+                        final chatProvider = context.read<ChatProvider>();
+                        final room = chatProvider.getOrCreateCommunityRoom(c.id, c.name, c.iconEmoji);
+                        Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => ChatConversationScreen(roomId: room.id)),
+                        );
+                      } else {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => CommunityDetailScreen(communityId: c.id)),
+                        );
+                      }
                     },
-                    child: const Text('View', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                    child: Text(c.isJoined ? 'Chat' : 'View', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),

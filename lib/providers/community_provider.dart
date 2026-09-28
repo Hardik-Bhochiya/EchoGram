@@ -13,6 +13,7 @@ class CommunityProvider extends ChangeNotifier {
   String _selectedCategory = 'All';
   String _searchQuery = '';
   Timer? _syncTimer;
+  String? _activeUserIdentifier;
 
   List<Region> get regions => _regions;
   List<Community> get communities => _communities;
@@ -24,9 +25,9 @@ class CommunityProvider extends ChangeNotifier {
 
   CommunityProvider() {
     _loadCommunities();
-    // Periodically poll backend for cross-device consistency (e.g. mobile created community appears on laptop)
+    // Periodically poll backend for cross-device consistency
     _syncTimer = Timer.periodic(const Duration(seconds: 4), (_) {
-      refreshCommunities();
+      refreshCommunities(userIdentifier: _activeUserIdentifier);
     });
   }
 
@@ -69,18 +70,29 @@ class CommunityProvider extends ChangeNotifier {
     refreshCommunities();
   }
 
-  Future<void> refreshCommunities() async {
+  Future<void> refreshCommunities({String? userIdentifier}) async {
+    if (userIdentifier != null && userIdentifier.isNotEmpty) {
+      _activeUserIdentifier = userIdentifier;
+    }
     try {
-      final remoteList = await ApiService().getCommunities();
+      final remoteList = await ApiService().getCommunities(userIdentifier: _activeUserIdentifier);
       final Map<String, Community> map = {};
       bool hasChanges = false;
+      final cleanUser = (_activeUserIdentifier ?? '').toLowerCase().replaceAll('@', '');
+
       for (final rc in remoteList) {
         final existingIdx = _communities.indexWhere((c) => c.id == rc.id);
-        final isJoined = existingIdx != -1 ? _communities[existingIdx].isJoined : false;
-        map[rc.id] = rc.copyWith(isJoined: isJoined);
-        LocalStoreService().addCommunity(map[rc.id]!);
+        final bool wasJoined = existingIdx != -1 ? _communities[existingIdx].isJoined : false;
+        final bool isMember = cleanUser.isNotEmpty && rc.members.any((m) => m.toLowerCase().replaceAll('@', '') == cleanUser);
+        final bool isJoined = rc.isJoined || wasJoined || isMember;
+
+        final updated = rc.copyWith(isJoined: isJoined);
+        map[rc.id] = updated;
+        LocalStoreService().addCommunity(updated);
         addLocation(rc.regionName);
-        if (existingIdx == -1 || _communities[existingIdx].memberCount != rc.memberCount) {
+        if (existingIdx == -1 ||
+            _communities[existingIdx].isJoined != isJoined ||
+            _communities[existingIdx].memberCount != rc.memberCount) {
           hasChanges = true;
         }
       }
@@ -91,7 +103,6 @@ class CommunityProvider extends ChangeNotifier {
       }
     } catch (_) {}
   }
-
 
   void selectRegion(Region region) {
     _selectedRegion = region;
@@ -132,7 +143,7 @@ class CommunityProvider extends ChangeNotifier {
     }
   }
 
-  void toggleJoinCommunity(String communityId) {
+  Future<void> toggleJoinCommunity(String communityId, {String? userIdentifier}) async {
     final index = _communities.indexWhere((c) => c.id == communityId);
     if (index != -1) {
       final current = _communities[index];
@@ -144,6 +155,21 @@ class CommunityProvider extends ChangeNotifier {
       );
       LocalStoreService().toggleJoinCommunity(communityId);
       notifyListeners();
+
+      final effUser = userIdentifier ?? _activeUserIdentifier;
+      if (effUser != null && effUser.isNotEmpty) {
+        try {
+          final updated = await ApiService().toggleJoinCommunity(communityId, userIdentifier: effUser);
+          if (updated != null) {
+            final idx = _communities.indexWhere((c) => c.id == communityId);
+            if (idx != -1) {
+              _communities[idx] = updated;
+              LocalStoreService().addCommunity(updated);
+              notifyListeners();
+            }
+          }
+        } catch (_) {}
+      }
     }
   }
 
@@ -159,8 +185,9 @@ class CommunityProvider extends ChangeNotifier {
     String creatorId = 'user-hardik',
     List<String>? rules,
   }) {
-    final effectiveRegionName = regionName ?? _selectedRegion?.name ?? 'Nadiad';
+    final effectiveRegionName = regionName ?? _selectedRegion?.name ?? 'DDU, Nadiad, Gujarat';
     final effectiveRegionId = regionId ?? 'region_${effectiveRegionName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '')}';
+    final cleanCreator = creatorId.toLowerCase().replaceAll('@', '');
 
     // Auto-register location in the app's dynamic location registry
     addLocation(effectiveRegionName);
@@ -172,13 +199,14 @@ class CommunityProvider extends ChangeNotifier {
       regionId: effectiveRegionId,
       regionName: effectiveRegionName,
       locationSpot: locationSpot,
-      creatorId: creatorId,
+      creatorId: cleanCreator,
       category: category,
       memberCount: 1,
       questionCount: 0,
       iconEmoji: iconEmoji,
       bannerColorHex: bannerColorHex,
       isJoined: true,
+      members: [cleanCreator],
       rules: rules ?? [
         '1. Respect all members',
         '2. No spam or commercial promotions',
@@ -189,8 +217,20 @@ class CommunityProvider extends ChangeNotifier {
 
     _communities.insert(0, newCommunity);
     LocalStoreService().addCommunity(newCommunity);
-    ApiService().createCommunity(newCommunity);
     notifyListeners();
+
+    // Persist to backend MongoDB
+    ApiService().createCommunity(newCommunity).then((created) {
+      if (created != null) {
+        final idx = _communities.indexWhere((c) => c.id == newCommunity.id);
+        if (idx != -1) {
+          _communities[idx] = created.copyWith(isJoined: true);
+          LocalStoreService().addCommunity(_communities[idx]);
+          notifyListeners();
+        }
+      }
+    }).catchError((_) {});
+
     return newCommunity;
   }
 

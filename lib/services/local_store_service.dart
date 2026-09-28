@@ -547,6 +547,20 @@ class LocalStoreService {
     _persistFriendRequests();
   }
 
+  void addFriend(String user1, String user2) {
+    final u1 = user1.trim().toLowerCase().replaceAll('@', '');
+    final u2 = user2.trim().toLowerCase().replaceAll('@', '');
+    if (u1.isEmpty || u2.isEmpty || u1 == u2) return;
+
+    _userFriends.putIfAbsent(u1, () => []);
+    if (!_userFriends[u1]!.contains(u2)) _userFriends[u1]!.add(u2);
+
+    _userFriends.putIfAbsent(u2, () => []);
+    if (!_userFriends[u2]!.contains(u1)) _userFriends[u2]!.add(u1);
+
+    _persistUserFriends();
+  }
+
   void removeFriend(String username1, String username2) {
     final u1 = username1.trim().toLowerCase().replaceAll('@', '');
     final u2 = username2.trim().toLowerCase().replaceAll('@', '');

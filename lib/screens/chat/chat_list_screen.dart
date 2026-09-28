@@ -26,8 +26,20 @@ class _ChatListScreenState extends State<ChatListScreen> {
       if (!mounted) return;
       final commProvider = context.read<CommunityProvider>();
       final chatProvider = context.read<ChatProvider>();
+      final authProvider = context.read<AuthProvider>();
+      final currentUser = authProvider.currentUser;
+
       for (final c in commProvider.joinedCommunities) {
         chatProvider.getOrCreateCommunityRoom(c.id, c.name, c.iconEmoji);
+      }
+
+      if (currentUser != null) {
+        for (final f in authProvider.getFriends()) {
+          chatProvider.startPersonalChat(
+            peerUser: f,
+            currentUser: currentUser,
+          );
+        }
       }
     });
   }
@@ -65,9 +77,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
     final joinedComms = communityProvider.joinedCommunities;
     final joinedCommIds = joinedComms.map((c) => c.id).toSet();
 
-    // Only include:
+    // Include:
     // 1. Joined community chats
-    // 2. Personal chats where the peer is an accepted friend
+    // 2. Personal chats where the peer is a friend OR has active messages
     final eligibleRooms = chatProvider.rooms.where((r) {
       if (r.isGroup || r.communityId != null) {
         return joinedCommIds.contains(r.communityId) ||
@@ -76,7 +88,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
         if (currentUser == null) return false;
         final peerUsername = _getPeerUsername(r, currentUser.username);
         if (peerUsername == null || peerUsername.isEmpty) return false;
-        return authProvider.areFriends(peerUsername);
+        return authProvider.areFriends(peerUsername) || r.lastMessage.isNotEmpty;
       }
     }).toList();
 
