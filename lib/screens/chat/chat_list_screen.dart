@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../models/chat_room.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../providers/community_provider.dart';
+import '../community/communities_screen.dart';
 import '../people/people_screen.dart';
 import 'chat_conversation_screen.dart';
 
@@ -16,17 +20,67 @@ class _ChatListScreenState extends State<ChatListScreen> {
   String _searchQuery = '';
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final commProvider = context.read<CommunityProvider>();
+      final chatProvider = context.read<ChatProvider>();
+      for (final c in commProvider.joinedCommunities) {
+        chatProvider.getOrCreateCommunityRoom(c.id, c.name, c.iconEmoji);
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
   }
 
+  String? _getPeerUsername(ChatRoom room, String currentUsername) {
+    final cleanCurrent = currentUsername.trim().toLowerCase().replaceAll('@', '');
+    if (room.id.startsWith('dm-')) {
+      final parts = room.id.substring(3).split('_');
+      if (parts.length == 2) {
+        final p1 = parts[0].toLowerCase();
+        final p2 = parts[1].toLowerCase();
+        if (p1 == cleanCurrent) return p2;
+        if (p2 == cleanCurrent) return p1;
+      }
+    }
+    if (room.subtitle != null && room.subtitle!.startsWith('@')) {
+      return room.subtitle!.substring(1).trim().toLowerCase();
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final chatProvider = context.watch<ChatProvider>();
-    final rooms = chatProvider.rooms;
+    final communityProvider = context.watch<CommunityProvider>();
+    final authProvider = context.watch<AuthProvider>();
+    final currentUser = authProvider.currentUser;
 
-    final filteredRooms = rooms.where((r) {
+    final joinedComms = communityProvider.joinedCommunities;
+    final joinedCommIds = joinedComms.map((c) => c.id).toSet();
+
+    // Only include:
+    // 1. Joined community chats
+    // 2. Personal chats where the peer is an accepted friend
+    final eligibleRooms = chatProvider.rooms.where((r) {
+      if (r.isGroup || r.communityId != null) {
+        return joinedCommIds.contains(r.communityId) ||
+            joinedComms.any((c) => r.id == 'room-${c.id}');
+      } else {
+        if (currentUser == null) return false;
+        final peerUsername = _getPeerUsername(r, currentUser.username);
+        if (peerUsername == null || peerUsername.isEmpty) return false;
+        return authProvider.areFriends(peerUsername);
+      }
+    }).toList();
+
+    final filteredRooms = eligibleRooms.where((r) {
       if (_searchQuery.isEmpty) return true;
       return r.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
           r.lastMessage.toLowerCase().contains(_searchQuery.toLowerCase());
@@ -106,30 +160,51 @@ class _ChatListScreenState extends State<ChatListScreen> {
                           ),
                           const SizedBox(height: 6),
                           const Text(
-                            'Personal chat is unlocked when you and a peer become accepted friends.',
+                            'Chats appear here for communities you have joined and friends you have added.',
                             style: TextStyle(color: Color(0xFF8B949E), fontSize: 13),
                             textAlign: TextAlign.center,
                           ),
                           const SizedBox(height: 18),
-                          ElevatedButton.icon(
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (_) => const PeopleScreen()),
-                              );
-                            },
-                            icon: const Icon(Icons.person_search_rounded, size: 18),
-                            label: const Text('Find Friends in People'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF238636),
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                            ),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              OutlinedButton.icon(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(builder: (_) => const CommunitiesScreen()),
+                                  );
+                                },
+                                icon: const Icon(Icons.groups_rounded, size: 16, color: Color(0xFF58A6FF)),
+                                label: const Text('Communities', style: TextStyle(color: Color(0xFF58A6FF), fontSize: 12)),
+                                style: OutlinedButton.styleFrom(
+                                  side: const BorderSide(color: Color(0xFF30363D)),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              ElevatedButton.icon(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(builder: (_) => const PeopleScreen()),
+                                  );
+                                },
+                                icon: const Icon(Icons.person_search_rounded, size: 16),
+                                label: const Text('Find Friends', style: TextStyle(fontSize: 12)),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF238636),
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
                     ),
                   )
+
                 : ListView.separated(
                     padding: const EdgeInsets.symmetric(vertical: 6),
                     itemCount: filteredRooms.length,

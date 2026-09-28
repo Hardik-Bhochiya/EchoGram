@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../models/community.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/community_provider.dart';
+import '../../providers/chat_provider.dart';
 import '../../widgets/community_card.dart';
 import '../../widgets/custom_text_field.dart';
 import '../../widgets/primary_button.dart';
@@ -401,7 +402,7 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
                             rule4Controller.text.trim(),
                           ].where((r) => r.isNotEmpty).toList();
 
-                          ctx.read<CommunityProvider>().createCommunity(
+                          final created = ctx.read<CommunityProvider>().createCommunity(
                             name: nameController.text.trim(),
                             description: descController.text.trim(),
                             category: selectedCategory,
@@ -411,6 +412,11 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
                             locationSpot: spot,
                             creatorId: currentUserId,
                             rules: rules.isNotEmpty ? rules : null,
+                          );
+                          ctx.read<ChatProvider>().getOrCreateCommunityRoom(
+                            created.id,
+                            created.name,
+                            created.iconEmoji,
                           );
                           Navigator.pop(ctx);
                           ScaffoldMessenger.of(context).showSnackBar(

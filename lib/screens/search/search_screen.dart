@@ -7,8 +7,10 @@ import '../../providers/auth_provider.dart';
 import '../../providers/community_provider.dart';
 import '../../providers/question_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../services/user_service.dart';
 import '../community/community_detail_screen.dart';
 import '../question/question_detail_screen.dart';
+import '../profile/user_profile_screen.dart';
 import '../chat/chat_conversation_screen.dart';
 
 class SearchScreen extends StatefulWidget {
@@ -20,13 +22,28 @@ class SearchScreen extends StatefulWidget {
 
 class _SearchScreenState extends State<SearchScreen> {
   final _searchController = TextEditingController();
+  final UserService _userService = UserService();
   String _query = '';
   String _selectedFilter = 'All'; // 'All', 'Users', 'Communities', 'Questions'
+  List<User> _remoteUsers = [];
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _onSearchQueryChanged(String val, String? currentUserId) async {
+    setState(() => _query = val);
+    final clean = val.trim().toLowerCase().replaceAll('@', '');
+    if (clean.isEmpty) {
+      setState(() => _remoteUsers = []);
+      return;
+    }
+    final results = await _userService.searchUsers(clean, currentUserId: currentUserId);
+    if (mounted) {
+      setState(() => _remoteUsers = results);
+    }
   }
 
   @override
@@ -45,12 +62,20 @@ class _SearchScreenState extends State<SearchScreen> {
     List<Question> matchedQuestions = [];
 
     if (cleanQuery.isNotEmpty) {
-      matchedUsers = auth.knownUsers.where((u) {
-        if (user != null && u.id == user.id) return false;
-        return u.username.toLowerCase().contains(cleanQuery) ||
+      final Map<String, User> userMap = {};
+      for (final ru in _remoteUsers) {
+        if (user != null && ru.id == user.id) continue;
+        userMap[ru.username.toLowerCase()] = ru;
+      }
+      for (final u in auth.knownUsers) {
+        if (user != null && u.id == user.id) continue;
+        if (u.username.toLowerCase().contains(cleanQuery) ||
             u.name.toLowerCase().contains(cleanQuery) ||
-            u.campusOrCity.toLowerCase().contains(cleanQuery);
-      }).toList();
+            u.campusOrCity.toLowerCase().contains(cleanQuery)) {
+          userMap[u.username.toLowerCase()] = u;
+        }
+      }
+      matchedUsers = userMap.values.toList();
 
       matchedCommunities = allCommunities.where((c) {
         return c.name.toLowerCase().contains(cleanQuery) ||
@@ -65,6 +90,7 @@ class _SearchScreenState extends State<SearchScreen> {
             q.communityName.toLowerCase().contains(cleanQuery);
       }).toList();
     }
+
 
     return Scaffold(
       backgroundColor: const Color(0xFF0D1117),
@@ -114,17 +140,18 @@ class _SearchScreenState extends State<SearchScreen> {
                         isDense: true,
                         contentPadding: EdgeInsets.zero,
                       ),
-                      onChanged: (val) => setState(() => _query = val),
+                      onChanged: (val) => _onSearchQueryChanged(val, user?.id),
                     ),
                   ),
                   if (cleanQuery.isNotEmpty)
                     GestureDetector(
                       onTap: () {
                         _searchController.clear();
-                        setState(() => _query = '');
+                        _onSearchQueryChanged('', user?.id);
                       },
                       child: const Icon(Icons.cancel_rounded, size: 18, color: Color(0xFF8B949E)),
                     ),
+
                 ],
               ),
             ),
@@ -241,76 +268,92 @@ class _SearchScreenState extends State<SearchScreen> {
             final isFriend = auth.areFriends(u.username);
             return Container(
               margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: const Color(0xFF161B22),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: const Color(0xFF30363D)),
               ),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 20,
-                    backgroundColor: const Color(0xFF21262D),
-                    child: Text(u.avatarUrl ?? '🎓', style: const TextStyle(fontSize: 18)),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => UserProfileScreen(user: u)),
+                    ).then((_) {
+                      if (mounted) setState(() {});
+                    });
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Row(
                       children: [
-                        Text(
-                          u.name,
-                          style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFF0F6FC), fontSize: 13.5),
+                        CircleAvatar(
+                          radius: 20,
+                          backgroundColor: const Color(0xFF21262D),
+                          child: Text(u.avatarUrl ?? '🎓', style: const TextStyle(fontSize: 18)),
                         ),
-                        Text(
-                          '${u.handle} • ${u.campusOrCity}',
-                          style: const TextStyle(color: Color(0xFF8B949E), fontSize: 11.5),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                u.name,
+                                style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFF0F6FC), fontSize: 13.5),
+                              ),
+                              Text(
+                                '${u.handle} • ${u.campusOrCity}',
+                                style: const TextStyle(color: Color(0xFF8B949E), fontSize: 11.5),
+                              ),
+                            ],
+                          ),
                         ),
+                        if (isFriend)
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF21262D),
+                              foregroundColor: const Color(0xFF58A6FF),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            onPressed: () {
+                              if (currentUser == null) return;
+                              final chatProvider = context.read<ChatProvider>();
+                              final room = chatProvider.startPersonalChat(peerUser: u, currentUser: currentUser);
+                              Navigator.of(context).push(
+                                MaterialPageRoute(builder: (_) => ChatConversationScreen(roomId: room.id)),
+                              );
+                            },
+                            child: const Text('Message', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                          )
+                        else
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF238636),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            onPressed: () async {
+                              final success = await auth.sendFriendRequest(u.username);
+                              if (mounted && success) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Friend request sent to @${u.username}! 🤝'),
+                                    backgroundColor: const Color(0xFF238636),
+                                  ),
+                                );
+                                setState(() {});
+                              }
+                            },
+                            child: const Text('Connect', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                          ),
                       ],
                     ),
                   ),
-                  if (isFriend)
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF21262D),
-                        foregroundColor: const Color(0xFF58A6FF),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                      onPressed: () {
-                        if (currentUser == null) return;
-                        final chatProvider = context.read<ChatProvider>();
-                        final room = chatProvider.startPersonalChat(peerUser: u, currentUser: currentUser);
-                        Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => ChatConversationScreen(roomId: room.id)),
-                        );
-                      },
-                      child: const Text('Message', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
-                    )
-                  else
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF238636),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                      onPressed: () async {
-                        final success = await auth.sendFriendRequest(u.username);
-                        if (mounted && success) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Friend request sent to @${u.username}! 🤝'),
-                              backgroundColor: const Color(0xFF238636),
-                            ),
-                          );
-                          setState(() {});
-                        }
-                      },
-                      child: const Text('Connect', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
-                    ),
-                ],
+                ),
               ),
             );
           }),

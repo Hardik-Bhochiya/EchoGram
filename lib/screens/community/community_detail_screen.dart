@@ -129,6 +129,12 @@ class CommunityDetailScreen extends StatelessWidget {
                 child: ElevatedButton.icon(
                   onPressed: () {
                     communityProvider.toggleJoinCommunity(liveCommunity.id);
+                    final chatProvider = context.read<ChatProvider>();
+                    chatProvider.getOrCreateCommunityRoom(
+                      liveCommunity.id,
+                      liveCommunity.name,
+                      liveCommunity.iconEmoji,
+                    );
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text('Joined ${liveCommunity.name}! 🎉'),
