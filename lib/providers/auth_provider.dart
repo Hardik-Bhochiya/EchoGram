@@ -122,39 +122,28 @@ class AuthProvider extends ChangeNotifier {
 
     try {
       User? user;
-
       String? lastAuthError;
 
-      // 1. Try Firebase Auth (if connected with a valid project)
-      if (_authService.hasValidFirebaseConfig) {
+      // 1. Try Node.js + Express + MongoDB Backend API FIRST (Active Live Database)
+      try {
+        user = await ApiService().login(usernameOrEmail, password);
+      } catch (e) {
+        lastAuthError = e.toString().replaceFirst('Exception: ', '');
+        debugPrint('ApiService login notice: $e');
+      }
+
+      // 2. If Backend not available or returned no user, try Firebase Auth (if valid project configured)
+      if (user == null && _authService.hasValidFirebaseConfig) {
         try {
           user = await _authService.login(usernameOrEmail, password);
         } catch (e) {
-          lastAuthError = e.toString().replaceFirst('Exception: ', '');
+          lastAuthError ??= e.toString().replaceFirst('Exception: ', '');
           debugPrint('Firebase login notice: $e');
         }
       }
 
-      // 2. Try Node.js + Express + MongoDB Backend API
-      if (user == null) {
-        try {
-          user = await ApiService().login(usernameOrEmail, password);
-        } catch (e) {
-          debugPrint('ApiService login notice: $e');
-        }
-      }
-
-      // 3. If real Firebase returned an authentication error, surface it directly
-      if (user == null && lastAuthError != null) {
-        if (!lastAuthError.contains('not activated') &&
-            !lastAuthError.contains('disabled in your Firebase') &&
-            !lastAuthError.contains('CONFIGURATION_NOT_FOUND')) {
-          throw Exception(lastAuthError);
-        }
-      }
-
-      // 4. Session recovery for known registered local users
-      if (user == null) {
+      // 3. Session recovery for known registered local users
+      if (user == null && lastAuthError == null) {
         final clean = usernameOrEmail.trim().toLowerCase().replaceAll('@', '');
         final matches = _knownUsers.where(
           (u) => u.username.toLowerCase() == clean || u.email.toLowerCase() == clean,
@@ -181,7 +170,7 @@ class AuthProvider extends ChangeNotifier {
         return true;
       }
 
-      throw Exception('Invalid email/username or password.');
+      throw Exception(lastAuthError ?? 'Invalid email/username or password.');
     } catch (e) {
       _isLoading = false;
       _status = AuthStatus.unauthenticated;
@@ -416,7 +405,7 @@ class AuthProvider extends ChangeNotifier {
 
   // --- Friends & Friend Requests Methods for UI Compatibility ---
 
-  String get _activeUsername => _currentUser?.username ?? 'hardik';
+  String get _activeUsername => _currentUser?.username ?? 'user';
 
   List<User> getFriends() {
     if (_currentUser == null) return [];
@@ -477,11 +466,12 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<bool> sendFriendRequest(String targetUsername) async {
-    final senderName = _currentUser?.name ?? 'Hardik Bhochiya';
+    final senderName = _currentUser?.name ?? _currentUser?.username ?? 'User';
     final senderUname = _activeUsername;
+    final currentUid = _currentUser?.id ?? 'user_${DateTime.now().millisecondsSinceEpoch}';
     final req = FriendRequest(
       id: 'req_${DateTime.now().millisecondsSinceEpoch}',
-      senderId: _currentUser?.id ?? 'user-hardik',
+      senderId: currentUid,
       senderUsername: senderUname,
       senderName: senderName,
       senderAvatar: _currentUser?.avatarUrl,
@@ -494,7 +484,7 @@ class AuthProvider extends ChangeNotifier {
 
     LocalStoreService().addFriendRequest(req);
     ApiService().sendFriendRequest(
-      senderId: _currentUser?.id ?? 'user-hardik',
+      senderId: currentUid,
       senderUsername: senderUname,
       senderName: senderName,
       receiverUsername: targetUsername,

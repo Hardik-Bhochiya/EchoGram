@@ -77,8 +77,8 @@ exports.sendMessage = async (req, res) => {
     const newMessage = {
       id: uuidv4(),
       roomId,
-      senderId: senderId || 'user-hardik',
-      senderName: isAnonymous ? 'Anonymous' : senderName || 'Hardik',
+      senderId: senderId || 'user',
+      senderName: isAnonymous ? 'Anonymous' : (senderName || 'Member'),
       content,
       isAnonymous: Boolean(isAnonymous),
       timestamp: new Date().toISOString(),

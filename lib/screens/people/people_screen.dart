@@ -47,7 +47,10 @@ class _PeopleScreenState extends State<PeopleScreen> {
     });
   }
 
+  int _searchSession = 0;
+
   void _onSearchChanged(String query) async {
+    final sessionId = ++_searchSession;
     setState(() {
       _searchQuery = query;
       _isSearching = query.trim().isNotEmpty;
@@ -60,7 +63,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
 
     final currentUserId = context.read<AuthProvider>().currentUser?.id;
     final results = await _userService.searchUsers(query, currentUserId: currentUserId);
-    if (!mounted) return;
+    if (!mounted || sessionId != _searchSession) return;
     setState(() {
       _searchResults = results;
     });

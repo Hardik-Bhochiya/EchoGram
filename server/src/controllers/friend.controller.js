@@ -53,9 +53,9 @@ exports.sendFriendRequest = async (req, res) => {
 
   const newRequest = {
     id: uuidv4(),
-    senderId: senderId || 'user-hardik',
+    senderId: senderId || 'user',
     senderUsername: sUser,
-    senderName: senderName || 'Hardik Bhochiya',
+    senderName: senderName || sUser || 'Member',
     senderAvatar: senderAvatar || '🎓',
     receiverId: targetUser.id,
     receiverUsername: rUser,

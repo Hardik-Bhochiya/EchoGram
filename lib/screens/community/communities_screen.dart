@@ -44,7 +44,7 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
   }
 
   void _confirmDeleteCommunity(Community community) {
-    final currentUserId = context.read<AuthProvider>().currentUser?.id ?? 'user-hardik';
+    final currentUserId = context.read<AuthProvider>().currentUser?.id ?? '';
 
     showDialog(
       context: context,
@@ -386,7 +386,7 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
                       text: 'Create Community',
                       onPressed: () {
                         if (nameController.text.trim().isNotEmpty) {
-                          final currentUserId = ctx.read<AuthProvider>().currentUser?.id ?? 'user-hardik';
+                          final currentUserId = ctx.read<AuthProvider>().currentUser?.id ?? '';
                           final effectiveLocation = (isCustomLocation && customLocationController.text.trim().isNotEmpty)
                               ? customLocationController.text.trim()
                               : selectedRegionName;
@@ -442,7 +442,7 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
   Widget build(BuildContext context) {
     final communityProvider = context.watch<CommunityProvider>();
     final auth = context.watch<AuthProvider>();
-    final currentUserId = auth.currentUser?.id ?? 'user-hardik';
+    final currentUserId = auth.currentUser?.id ?? '';
 
     final joinedCommunities = communityProvider.joinedCommunities;
 

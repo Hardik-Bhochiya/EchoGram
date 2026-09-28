@@ -87,7 +87,7 @@ exports.createCommunity = async (req, res) => {
       regionId: effectiveRegionId,
       regionName: effectiveRegionName,
       locationSpot: locationSpot || 'Campus / City Spot',
-      creatorId: creatorId || 'user-hardik',
+      creatorId: creatorId || 'user',
       category: category || 'Campus',
       memberCount: 1,
       questionCount: 0,
@@ -99,7 +99,7 @@ exports.createCommunity = async (req, res) => {
         '3. No abusive language or harassment',
         '4. Stay on topic and share relevant updates',
       ],
-      members: [creatorId || 'user-hardik'],
+      members: [creatorId || 'user'],
     };
 
     if (isConnected()) {

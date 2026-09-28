@@ -10,6 +10,7 @@ import '../people/people_screen.dart';
 import '../community/communities_screen.dart';
 import '../community/community_detail_screen.dart';
 import '../chat/chat_conversation_screen.dart';
+import '../search/search_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -54,6 +55,16 @@ class HomeScreen extends StatelessWidget {
           ],
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.search_rounded, color: Color(0xFFF0F6FC), size: 24),
+            tooltip: 'Search',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SearchScreen()),
+              );
+            },
+          ),
           Stack(
             alignment: Alignment.center,
             children: [

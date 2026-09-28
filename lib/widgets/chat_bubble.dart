@@ -13,7 +13,7 @@ class ChatBubble extends StatelessWidget {
     super.key,
     required this.message,
     this.showSenderName = true,
-    this.currentUserId = 'user-hardik',
+    this.currentUserId = '',
     this.onDelete,
   });
 

@@ -413,15 +413,25 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
             ),
             const SizedBox(height: 16),
 
-            // Stats Row
+            // Clean Necessary Profile Details
             Row(
               children: [
                 Expanded(
-                  child: _buildStatCard('Reputation', '${user.reputation} pts', user.rankEmoji),
+                  child: _buildInfoCard(
+                    title: 'LOCATION',
+                    val: user.campusOrCity.isNotEmpty ? user.campusOrCity : 'DDU, Nadiad',
+                    icon: Icons.location_on_outlined,
+                    iconColor: const Color(0xFF58A6FF),
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: _buildStatCard('Rank', user.rank, '🏆'),
+                  child: _buildInfoCard(
+                    title: 'STATUS',
+                    val: user.isCollegeVerified ? 'Verified Student' : 'Community Member',
+                    icon: user.isCollegeVerified ? Icons.verified_rounded : Icons.person_outline_rounded,
+                    iconColor: user.isCollegeVerified ? const Color(0xFF238636) : const Color(0xFF8B949E),
+                  ),
                 ),
               ],
             ),
@@ -560,7 +570,12 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     }
   }
 
-  Widget _buildStatCard(String title, String val, String emoji) {
+  Widget _buildInfoCard({
+    required String title,
+    required String val,
+    required IconData icon,
+    required Color iconColor,
+  }) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
       decoration: BoxDecoration(
@@ -575,16 +590,18 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                title.toUpperCase(),
-                style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF8B949E)),
+                title,
+                style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF8B949E), letterSpacing: 0.5),
               ),
-              Text(emoji, style: const TextStyle(fontSize: 14)),
+              Icon(icon, size: 16, color: iconColor),
             ],
           ),
           const SizedBox(height: 6),
           Text(
             val,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFF0F6FC)),
+            style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: Color(0xFFF0F6FC)),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),

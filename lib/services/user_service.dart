@@ -14,7 +14,7 @@ class UserService {
 
   /// Unified multi-tier search across LocalStore, MongoDB Backend API, and Cloud Firestore
   Future<List<User>> searchUsers(String query, {String? currentUserId}) async {
-    final clean = query.trim().toLowerCase().replaceAll('@', '');
+    final clean = query.trim().replaceFirst(RegExp(r'^@'), '').trim();
     if (clean.isEmpty) return [];
 
     final Map<String, User> combined = {};
@@ -36,33 +36,19 @@ class UserService {
       }
     } catch (_) {}
 
-    // 3. Query Cloud Firestore (if Firebase active)
+    // 3. Query Cloud Firestore only if Firebase user is logged in
     if (isFirebaseInitialized) {
       try {
+        final cleanLower = clean.toLowerCase();
         final usernameSnap = await _firestore
             .collection('users')
-            .where('normalizedUsername', isGreaterThanOrEqualTo: clean)
-            .where('normalizedUsername', isLessThanOrEqualTo: '$clean\uf8ff')
+            .where('normalizedUsername', isGreaterThanOrEqualTo: cleanLower)
+            .where('normalizedUsername', isLessThanOrEqualTo: '$cleanLower\uf8ff')
             .limit(15)
-            .get();
+            .get()
+            .timeout(const Duration(milliseconds: 700));
 
         for (final doc in usernameSnap.docs) {
-          final u = User.fromFirestore(doc.data(), doc.id);
-          if (u.id != currentUserId) {
-            combined[u.username.toLowerCase()] = u;
-            LocalStoreService().saveUser(u);
-          }
-        }
-
-        // Also search by displayName prefix
-        final nameSnap = await _firestore
-            .collection('users')
-            .where('name', isGreaterThanOrEqualTo: query.trim())
-            .where('name', isLessThanOrEqualTo: '${query.trim()}\uf8ff')
-            .limit(10)
-            .get();
-
-        for (final doc in nameSnap.docs) {
           final u = User.fromFirestore(doc.data(), doc.id);
           if (u.id != currentUserId) {
             combined[u.username.toLowerCase()] = u;

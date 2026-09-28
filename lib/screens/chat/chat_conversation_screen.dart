@@ -69,7 +69,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    final currentUserId = auth.currentUser?.id ?? 'user-hardik';
+    final currentUserId = auth.currentUser?.id ?? '';
     final chatProvider = context.watch<ChatProvider>();
 
     final room = chatProvider.rooms.firstWhere(

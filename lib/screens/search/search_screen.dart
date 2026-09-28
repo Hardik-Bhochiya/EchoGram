@@ -33,15 +33,18 @@ class _SearchScreenState extends State<SearchScreen> {
     super.dispose();
   }
 
+  int _searchSession = 0;
+
   void _onSearchQueryChanged(String val, String? currentUserId) async {
+    final sessionId = ++_searchSession;
     setState(() => _query = val);
-    final clean = val.trim().toLowerCase().replaceAll('@', '');
+    final clean = val.trim().replaceFirst(RegExp(r'^@'), '').trim();
     if (clean.isEmpty) {
       setState(() => _remoteUsers = []);
       return;
     }
     final results = await _userService.searchUsers(clean, currentUserId: currentUserId);
-    if (mounted) {
+    if (mounted && sessionId == _searchSession) {
       setState(() => _remoteUsers = results);
     }
   }
@@ -55,7 +58,7 @@ class _SearchScreenState extends State<SearchScreen> {
     final user = auth.currentUser;
     final allCommunities = communityProvider.communities;
     final allQuestions = questionProvider.questions;
-    final cleanQuery = _query.trim().toLowerCase().replaceAll('@', '');
+    final cleanQuery = _query.trim().replaceFirst(RegExp(r'^@'), '').toLowerCase();
 
     List<User> matchedUsers = [];
     List<Community> matchedCommunities = [];

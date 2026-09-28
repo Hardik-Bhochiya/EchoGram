@@ -101,9 +101,11 @@ class ApiService {
 
   Future<List<User>> searchPeers(String query) async {
     try {
-      final res = await http
-          .get(Uri.parse('$baseUrl/auth/users?q=$query'), headers: _headers)
-          .timeout(const Duration(seconds: 3));
+      final qTrim = query.trim();
+      final uri = Uri.parse('$baseUrl/auth/users').replace(
+        queryParameters: qTrim.isNotEmpty ? {'q': qTrim} : null,
+      );
+      final res = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 4));
       if (res.statusCode == 200) {
         _isServerReachable = true;
         _hasCheckedReachability = true;
@@ -227,14 +229,15 @@ class ApiService {
         _isServerReachable = true;
         _hasCheckedReachability = true;
         return User.fromJson(data['user']);
+      } else {
+        final data = jsonDecode(response.body);
+        throw Exception(data['message'] ?? 'Invalid username/email or password');
       }
+    } on Exception {
+      rethrow;
     } catch (_) {}
 
-    // Seamless offline/mobile login fallback
-    return MockDataService.currentUser.copyWith(
-      username: usernameOrEmail.isNotEmpty && !usernameOrEmail.contains('@') ? usernameOrEmail : MockDataService.currentUser.username,
-      email: usernameOrEmail.contains('@') ? usernameOrEmail : MockDataService.currentUser.email,
-    );
+    return null;
   }
 
   // Auth: Register
