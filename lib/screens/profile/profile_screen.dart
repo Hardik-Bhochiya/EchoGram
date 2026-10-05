@@ -63,168 +63,252 @@ class ProfileScreen extends StatelessWidget {
     final locationCtrl = TextEditingController(text: user.campusOrCity);
     final bioCtrl = TextEditingController(text: user.majorOrBio ?? '');
     String selectedAvatar = user.avatarUrl ?? '👤';
-    final availableAvatars = ['👤', '🎓', '💻', '🚀', '⚡', '📚', '🎨', '🌟'];
+    final availableAvatars = ['👤', '🎓', '💻', '🚀', '⚡', '📚', '🎨', '🌟', '🔥', '💡'];
+    bool isSaving = false;
+    String? validationError;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheetState) => Container(
-          padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 20,
-            bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-          ),
-          decoration: const BoxDecoration(
-            color: Color(0xFF161B22),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-            border: Border(top: BorderSide(color: Color(0xFF30363D), width: 1.5)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF30363D),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Edit Profile',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFFF0F6FC)),
-              ),
-              const SizedBox(height: 14),
-
-              // Avatar selection
-              const Text(
-                'Profile Photo / Avatar',
-                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF8B949E)),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 50,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: availableAvatars.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (context, index) {
-                    final av = availableAvatars[index];
-                    final isSel = selectedAvatar == av;
-                    return InkWell(
-                      onTap: () => setSheetState(() => selectedAvatar = av),
-                      borderRadius: BorderRadius.circular(14),
+        builder: (ctx, setSheetState) {
+          final mediaQuery = MediaQuery.of(ctx);
+          return Container(
+            constraints: BoxConstraints(
+              maxHeight: mediaQuery.size.height * 0.88,
+            ),
+            margin: EdgeInsets.only(
+              bottom: mediaQuery.viewInsets.bottom,
+            ),
+            decoration: const BoxDecoration(
+              color: Color(0xFF161B22),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              border: Border(top: BorderSide(color: Color(0xFF30363D), width: 1.5)),
+            ),
+            child: SafeArea(
+              top: false,
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
                       child: Container(
-                        width: 48,
-                        height: 48,
+                        width: 40,
+                        height: 4,
                         decoration: BoxDecoration(
-                          color: isSel ? const Color(0xFF21262D) : Colors.transparent,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: isSel ? const Color(0xFF58A6FF) : const Color(0xFF30363D),
-                            width: 2,
+                          color: const Color(0xFF30363D),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Edit Profile',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFFF0F6FC)),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF21262D),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFF30363D)),
+                          ),
+                          child: Text(
+                            user.handle,
+                            style: const TextStyle(fontSize: 12, color: Color(0xFF58A6FF), fontWeight: FontWeight.w600),
                           ),
                         ),
-                        alignment: Alignment.center,
-                        child: Text(av, style: const TextStyle(fontSize: 22)),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Avatar selection
+                    const Text(
+                      'Profile Photo / Avatar',
+                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF8B949E)),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 52,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: availableAvatars.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (context, index) {
+                          final av = availableAvatars[index];
+                          final isSel = selectedAvatar == av;
+                          return InkWell(
+                            onTap: () => setSheetState(() => selectedAvatar = av),
+                            borderRadius: BorderRadius.circular(14),
+                            child: Container(
+                              width: 50,
+                              height: 50,
+                              decoration: BoxDecoration(
+                                color: isSel ? const Color(0xFF21262D) : Colors.transparent,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: isSel ? const Color(0xFF58A6FF) : const Color(0xFF30363D),
+                                  width: isSel ? 2.5 : 1,
+                                ),
+                              ),
+                              alignment: Alignment.center,
+                              child: Text(av, style: const TextStyle(fontSize: 22)),
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 16),
+                    ),
+                    const SizedBox(height: 16),
 
-              TextField(
-                controller: nameCtrl,
-                style: const TextStyle(color: Color(0xFFF0F6FC)),
-                decoration: InputDecoration(
-                  labelText: 'Name',
-                  labelStyle: const TextStyle(color: Color(0xFF8B949E)),
-                  filled: true,
-                  fillColor: const Color(0xFF0D1117),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF30363D))),
-                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF30363D))),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: locationCtrl,
-                style: const TextStyle(color: Color(0xFFF0F6FC)),
-                decoration: InputDecoration(
-                  labelText: 'College / Location',
-                  hintText: 'e.g. DDU, Nadiad or Mumbai',
-                  hintStyle: const TextStyle(color: Color(0xFF8B949E), fontSize: 13),
-                  labelStyle: const TextStyle(color: Color(0xFF8B949E)),
-                  filled: true,
-                  fillColor: const Color(0xFF0D1117),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF30363D))),
-                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF30363D))),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: bioCtrl,
-                maxLines: 2,
-                style: const TextStyle(color: Color(0xFFF0F6FC)),
-                decoration: InputDecoration(
-                  labelText: 'Bio',
-                  hintText: 'Brief about yourself',
-                  hintStyle: const TextStyle(color: Color(0xFF8B949E), fontSize: 13),
-                  labelStyle: const TextStyle(color: Color(0xFF8B949E)),
-                  filled: true,
-                  fillColor: const Color(0xFF0D1117),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF30363D))),
-                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF30363D))),
-                ),
-              ),
-              const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: () async {
-                  final newName = nameCtrl.text.trim();
-                  final newLoc = locationCtrl.text.trim();
-                  final newBio = bioCtrl.text.trim();
-
-                  // If location does not exist in registry, automatically add it
-                  if (newLoc.isNotEmpty) {
-                    LocalStoreService().addLocation(newLoc);
-                  }
-
-                  await context.read<AuthProvider>().updateProfile(
-                    name: newName.isNotEmpty ? newName : user.name,
-                    campusOrCity: newLoc.isNotEmpty ? newLoc : user.campusOrCity,
-                    majorOrBio: newBio,
-                    avatarUrl: selectedAvatar,
-                  );
-                  if (ctx.mounted) {
-                    Navigator.pop(ctx);
-                  }
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Profile updated successfully!'),
-                        backgroundColor: Color(0xFF238636),
+                    if (validationError != null) ...[
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF85149).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFF85149)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.error_outline, size: 16, color: Color(0xFFF85149)),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                validationError!,
+                                style: const TextStyle(color: Color(0xFFF85149), fontSize: 12.5),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    );
-                  }
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF238636),
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size.fromHeight(46),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ],
+
+                    TextField(
+                      controller: nameCtrl,
+                      style: const TextStyle(color: Color(0xFFF0F6FC)),
+                      decoration: InputDecoration(
+                        labelText: 'Full Name *',
+                        labelStyle: const TextStyle(color: Color(0xFF8B949E)),
+                        filled: true,
+                        fillColor: const Color(0xFF0D1117),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF30363D))),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF30363D))),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF58A6FF), width: 1.5)),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: locationCtrl,
+                      style: const TextStyle(color: Color(0xFFF0F6FC)),
+                      decoration: InputDecoration(
+                        labelText: 'College / Location',
+                        hintText: 'e.g. DDU, Nadiad or Mumbai',
+                        hintStyle: const TextStyle(color: Color(0xFF8B949E), fontSize: 13),
+                        labelStyle: const TextStyle(color: Color(0xFF8B949E)),
+                        filled: true,
+                        fillColor: const Color(0xFF0D1117),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF30363D))),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF30363D))),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF58A6FF), width: 1.5)),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: bioCtrl,
+                      maxLines: 2,
+                      style: const TextStyle(color: Color(0xFFF0F6FC)),
+                      decoration: InputDecoration(
+                        labelText: 'Bio',
+                        hintText: 'Brief about yourself',
+                        hintStyle: const TextStyle(color: Color(0xFF8B949E), fontSize: 13),
+                        labelStyle: const TextStyle(color: Color(0xFF8B949E)),
+                        filled: true,
+                        fillColor: const Color(0xFF0D1117),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF30363D))),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF30363D))),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF58A6FF), width: 1.5)),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    ElevatedButton(
+                      onPressed: isSaving
+                          ? null
+                          : () async {
+                              final newName = nameCtrl.text.trim();
+                              final newLoc = locationCtrl.text.trim();
+                              final newBio = bioCtrl.text.trim();
+
+                              if (newName.isEmpty) {
+                                setSheetState(() => validationError = 'Full Name cannot be empty.');
+                                return;
+                              }
+
+                              setSheetState(() {
+                                isSaving = true;
+                                validationError = null;
+                              });
+
+                              try {
+                                if (newLoc.isNotEmpty) {
+                                  LocalStoreService().addLocation(newLoc);
+                                }
+
+                                await context.read<AuthProvider>().updateProfile(
+                                  name: newName,
+                                  campusOrCity: newLoc.isNotEmpty ? newLoc : user.campusOrCity,
+                                  majorOrBio: newBio,
+                                  avatarUrl: selectedAvatar,
+                                );
+
+                                if (ctx.mounted) {
+                                  Navigator.pop(ctx);
+                                }
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Profile updated successfully!'),
+                                      backgroundColor: Color(0xFF238636),
+                                    ),
+                                  );
+                                }
+                              } catch (e) {
+                                if (ctx.mounted) {
+                                  setSheetState(() {
+                                    isSaving = false;
+                                    validationError = e.toString().replaceFirst('Exception: ', '');
+                                  });
+                                }
+                              }
+                            },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF238636),
+                        disabledBackgroundColor: const Color(0xFF238636).withValues(alpha: 0.5),
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size.fromHeight(46),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: isSaving
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Text('Save Changes', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    ),
+                  ],
                 ),
-                child: const Text('Save Changes', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
               ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }

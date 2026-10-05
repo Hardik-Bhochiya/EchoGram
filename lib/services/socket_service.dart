@@ -162,15 +162,16 @@ class SocketService {
   }
 
   void joinUser(String userId, String username) {
+    final cleanUsername = username.replaceAll('@', '').trim().toLowerCase();
     _registeredUserId = userId;
-    _registeredUsername = username;
+    _registeredUsername = cleanUsername;
     if (disabledForTests) return;
     if (!_isConnected) {
       connect();
       return;
     }
-    _socket?.emit('join_user', {'userId': userId, 'username': username});
-    debugPrint('[SocketService] Emitted join_user for $username ($userId)');
+    _socket?.emit('join_user', {'userId': userId, 'username': cleanUsername});
+    debugPrint('[SocketService] Emitted join_user for $cleanUsername ($userId)');
   }
 
   void joinRoom(String roomId, String userName) {
@@ -262,7 +263,14 @@ class SocketService {
 
   void sendFriendRequest(Map<String, dynamic> requestData) {
     if (disabledForTests || !_isConnected) return;
-    _socket?.emit('send_friend_request', requestData);
+    final map = Map<String, dynamic>.from(requestData);
+    if (map['receiverUsername'] != null) {
+      map['receiverUsername'] = (map['receiverUsername'] as String).replaceAll('@', '').trim().toLowerCase();
+    }
+    if (map['senderUsername'] != null) {
+      map['senderUsername'] = (map['senderUsername'] as String).replaceAll('@', '').trim().toLowerCase();
+    }
+    _socket?.emit('send_friend_request', map);
   }
 
   void respondFriendRequest({
@@ -272,11 +280,13 @@ class SocketService {
     required String receiverUsername,
   }) {
     if (disabledForTests || !_isConnected) return;
+    final sClean = senderUsername.replaceAll('@', '').trim().toLowerCase();
+    final rClean = receiverUsername.replaceAll('@', '').trim().toLowerCase();
     _socket?.emit('respond_friend_request', {
       'requestId': requestId,
       'status': status,
-      'senderUsername': senderUsername,
-      'receiverUsername': receiverUsername,
+      'senderUsername': sClean,
+      'receiverUsername': rClean,
     });
   }
 

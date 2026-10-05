@@ -12,8 +12,12 @@ const registerChatSocket = (io) => {
     // Join personal user notification channel
     socket.on('join_user', ({ userId, username }) => {
       if (userId) socket.join(`user-${userId}`);
-      if (username) socket.join(`user-${username.toLowerCase()}`);
-      console.log(`[Socket.IO] Joined user channel: ${userId || username}`);
+      if (username) {
+        const cleanName = username.toLowerCase().replace(/^@/, '').trim();
+        socket.join(`user-${cleanName}`);
+        socket.join(`user-@${cleanName}`);
+        console.log(`[Socket.IO] Joined user channel: user-${cleanName} (id: ${userId})`);
+      }
     });
 
     socket.on('join_room', ({ roomId, userName }) => {
@@ -88,12 +92,22 @@ const registerChatSocket = (io) => {
 
       // If DM, notify recipient user channel so they see incoming message if not currently inside the room
       if (roomId.startsWith('dm-')) {
-        const parts = roomId.replace('dm-', '').split('_');
-        const sHandle = (senderUsername || senderName || '').toLowerCase().replace('@', '');
-        for (const userHandle of parts) {
-          if (userHandle.toLowerCase() !== sHandle) {
-            socket.to(`user-${userHandle.toLowerCase()}`).emit('receive_message', newMessage);
-          }
+        const stripped = roomId.substring(3).toLowerCase().trim();
+        const sHandle = (senderUsername || senderName || '').toLowerCase().replace(/^@/, '').trim();
+        let recipientHandle = '';
+        if (sHandle && stripped.startsWith(`${sHandle}_`)) {
+          recipientHandle = stripped.substring(sHandle.length + 1);
+        } else if (sHandle && stripped.endsWith(`_${sHandle}`)) {
+          recipientHandle = stripped.substring(0, stripped.length - sHandle.length - 1);
+        }
+
+        if (recipientHandle) {
+          socket.to(`user-${recipientHandle}`).emit('receive_message', newMessage);
+          socket.to(`user-@${recipientHandle}`).emit('receive_message', newMessage);
+          console.log(`[Socket.IO] Dispatched DM to user-${recipientHandle} for room ${roomId}`);
+        } else {
+          // Fallback broadcast across socket if recipient handle could not be uniquely isolated
+          socket.broadcast.emit('receive_message', newMessage);
         }
       }
     });
@@ -153,23 +167,26 @@ const registerChatSocket = (io) => {
     socket.on('send_friend_request', (data) => {
       const { receiverUsername } = data;
       if (receiverUsername) {
-        const rChannel = `user-${receiverUsername.toLowerCase().replaceAll('@', '')}`;
-        chatNamespace.to(rChannel).emit('friend_request_received', data);
-        console.log(`[Socket.IO] Broadcasted friend request to ${rChannel}`);
+        const cleanRec = receiverUsername.toLowerCase().replace(/^@/, '').trim();
+        chatNamespace.to(`user-${cleanRec}`).emit('friend_request_received', data);
+        chatNamespace.to(`user-@${cleanRec}`).emit('friend_request_received', data);
+        console.log(`[Socket.IO] Broadcasted friend request to user-${cleanRec}`);
       }
     });
 
     socket.on('respond_friend_request', (data) => {
       const { senderUsername, receiverUsername, status } = data;
-      const sUser = (senderUsername || '').toLowerCase().replaceAll('@', '');
-      const rUser = (receiverUsername || '').toLowerCase().replaceAll('@', '');
+      const sUser = (senderUsername || '').toLowerCase().replace(/^@/, '').trim();
+      const rUser = (receiverUsername || '').toLowerCase().replace(/^@/, '').trim();
       const eventName = status === 'accepted' ? 'friend_request_accepted' : 'friend_request_declined';
 
       if (sUser) {
         chatNamespace.to(`user-${sUser}`).emit(eventName, data);
+        chatNamespace.to(`user-@${sUser}`).emit(eventName, data);
       }
       if (rUser) {
         chatNamespace.to(`user-${rUser}`).emit(eventName, data);
+        chatNamespace.to(`user-@${rUser}`).emit(eventName, data);
       }
       console.log(`[Socket.IO] Broadcasted ${eventName} to user-${sUser} & user-${rUser}`);
     });

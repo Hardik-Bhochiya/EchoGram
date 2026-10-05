@@ -608,14 +608,22 @@ class LocalStoreService {
 
   List<FriendRequest> getPendingIncomingRequests(String username) {
     final clean = username.trim().toLowerCase().replaceAll('@', '');
-    return _friendRequests.where((r) =>
-        r.receiverUsername.toLowerCase() == clean && r.status == 'pending').toList();
+    return _friendRequests.where((r) {
+      final s = r.senderUsername.trim().toLowerCase().replaceAll('@', '');
+      final rec = r.receiverUsername.trim().toLowerCase().replaceAll('@', '');
+      if (areFriends(clean, s)) return false;
+      return rec == clean && r.status == 'pending';
+    }).toList();
   }
 
   List<FriendRequest> getPendingOutgoingRequests(String username) {
     final clean = username.trim().toLowerCase().replaceAll('@', '');
-    return _friendRequests.where((r) =>
-        r.senderUsername.toLowerCase() == clean && r.status == 'pending').toList();
+    return _friendRequests.where((r) {
+      final s = r.senderUsername.trim().toLowerCase().replaceAll('@', '');
+      final rec = r.receiverUsername.trim().toLowerCase().replaceAll('@', '');
+      if (areFriends(clean, rec)) return false;
+      return s == clean && r.status == 'pending';
+    }).toList();
   }
 
   bool areFriends(String username1, String username2) {
@@ -632,9 +640,13 @@ class LocalStoreService {
   }
 
   void addFriendRequest(FriendRequest req) {
+    final sClean = req.senderUsername.trim().toLowerCase().replaceAll('@', '');
+    final rClean = req.receiverUsername.trim().toLowerCase().replaceAll('@', '');
+    if (sClean == rClean || areFriends(sClean, rClean)) return;
+
     final existingIdx = _friendRequests.indexWhere((r) =>
-        (r.senderUsername.toLowerCase() == req.senderUsername.toLowerCase() &&
-         r.receiverUsername.toLowerCase() == req.receiverUsername.toLowerCase()) ||
+        (r.senderUsername.trim().toLowerCase().replaceAll('@', '') == sClean &&
+         r.receiverUsername.trim().toLowerCase().replaceAll('@', '') == rClean) ||
         r.id == req.id);
     if (existingIdx != -1) {
       _friendRequests[existingIdx] = req;
@@ -649,20 +661,23 @@ class LocalStoreService {
     if (idx == -1 && requestId.contains('_to_')) {
       final parts = requestId.split('_to_');
       if (parts.length == 2) {
-        final s = parts[0].trim().toLowerCase();
-        final rec = parts[1].trim().toLowerCase();
+        final s = parts[0].trim().toLowerCase().replaceAll('@', '');
+        final rec = parts[1].trim().toLowerCase().replaceAll('@', '');
         idx = _friendRequests.indexWhere((r) =>
-            r.senderUsername.trim().toLowerCase() == s &&
-            r.receiverUsername.trim().toLowerCase() == rec);
+            r.senderUsername.trim().toLowerCase().replaceAll('@', '') == s &&
+            r.receiverUsername.trim().toLowerCase().replaceAll('@', '') == rec);
       }
     }
     if (idx == -1 && senderUsername != null && receiverUsername != null) {
       final s = senderUsername.trim().toLowerCase().replaceAll('@', '');
       final rec = receiverUsername.trim().toLowerCase().replaceAll('@', '');
       idx = _friendRequests.indexWhere((r) =>
-          (r.senderUsername.trim().toLowerCase() == s && r.receiverUsername.trim().toLowerCase() == rec) ||
-          (r.senderUsername.trim().toLowerCase() == rec && r.receiverUsername.trim().toLowerCase() == s));
+          (r.senderUsername.trim().toLowerCase().replaceAll('@', '') == s && r.receiverUsername.trim().toLowerCase().replaceAll('@', '') == rec) ||
+          (r.senderUsername.trim().toLowerCase().replaceAll('@', '') == rec && r.receiverUsername.trim().toLowerCase().replaceAll('@', '') == s));
     }
+
+    final sUser = senderUsername?.trim().toLowerCase().replaceAll('@', '');
+    final rUser = receiverUsername?.trim().toLowerCase().replaceAll('@', '');
 
     if (idx != -1) {
       if (status == 'declined' || status == 'rejected') {
@@ -685,7 +700,28 @@ class LocalStoreService {
         if (!_userFriends[u2]!.contains(u1)) _userFriends[u2]!.add(u1);
 
         _persistUserFriends();
+
+        // Purge any pending requests between these two users
+        _friendRequests.removeWhere((r) {
+          final rs = r.senderUsername.trim().toLowerCase().replaceAll('@', '');
+          final rr = r.receiverUsername.trim().toLowerCase().replaceAll('@', '');
+          return (rs == u1 && rr == u2) || (rs == u2 && rr == u1);
+        });
       }
+      _persistFriendRequests();
+    } else if (status == 'accepted' && sUser != null && rUser != null) {
+      _userFriends.putIfAbsent(sUser, () => []);
+      if (!_userFriends[sUser]!.contains(rUser)) _userFriends[sUser]!.add(rUser);
+
+      _userFriends.putIfAbsent(rUser, () => []);
+      if (!_userFriends[rUser]!.contains(sUser)) _userFriends[rUser]!.add(sUser);
+
+      _friendRequests.removeWhere((r) {
+        final rs = r.senderUsername.trim().toLowerCase().replaceAll('@', '');
+        final rr = r.receiverUsername.trim().toLowerCase().replaceAll('@', '');
+        return (rs == sUser && rr == rUser) || (rs == rUser && rr == sUser);
+      });
+      _persistUserFriends();
       _persistFriendRequests();
     }
   }

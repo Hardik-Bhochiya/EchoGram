@@ -67,7 +67,9 @@ class AuthProvider extends ChangeNotifier {
               _status = AuthStatus.authenticated;
               final prefs = await SharedPreferences.getInstance();
               await prefs.setString('saved_user', jsonEncode(profile.toJson()));
+              SocketService().joinUser(profile.id, profile.username);
               _initFirestoreFriendListeners(profile);
+              syncFriendData();
               notifyListeners();
               return;
             }
@@ -391,64 +393,102 @@ class AuthProvider extends ChangeNotifier {
         majorOrBio: majorOrBio,
       );
 
-  Future<void> updateProfile({
+  Future<bool> updateProfile({
     required String name,
     required String campusOrCity,
     required String majorOrBio,
     String? avatarUrl,
   }) async {
-    if (_currentUser != null) {
-      final updated = _currentUser!.copyWith(
-        name: name,
-        campusOrCity: campusOrCity,
-        majorOrBio: majorOrBio,
-        avatarUrl: avatarUrl ?? _currentUser!.avatarUrl,
-      );
-      _currentUser = updated;
+    if (_currentUser == null) return false;
 
-      // 1. Update in LocalStoreService immediately
-      LocalStoreService().saveUser(updated);
-
-      // 2. Persist to SharedPreferences immediately
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('saved_user', jsonEncode(updated.toJson()));
-
-      // 3. Update in _knownUsers list
-      final kIdx = _knownUsers.indexWhere((k) => k.username.toLowerCase() == updated.username.toLowerCase());
-      if (kIdx != -1) {
-        _knownUsers[kIdx] = updated;
-      }
-
-      // 4. Update in Backend Database (MongoDB & in-memory store)
-      try {
-        final remoteUser = await ApiService().updateProfile(
-          id: updated.id,
-          username: updated.username,
-          name: name,
-          campusOrCity: campusOrCity,
-          majorOrBio: majorOrBio,
-          avatarUrl: avatarUrl,
-        );
-        if (remoteUser != null) {
-          _currentUser = remoteUser;
-          LocalStoreService().saveUser(remoteUser);
-          await prefs.setString('saved_user', jsonEncode(remoteUser.toJson()));
-        }
-      } catch (_) {}
-
-      // 5. Update Cloud Firestore
-      try {
-        await _authService.updateProfile(
-          uid: _currentUser!.id,
-          name: name,
-          campusOrCity: campusOrCity,
-          majorOrBio: majorOrBio,
-          avatarUrl: avatarUrl,
-        );
-      } catch (_) {}
-
-      notifyListeners();
+    final trimmedName = name.trim();
+    if (trimmedName.isEmpty) {
+      throw Exception('Name cannot be empty.');
     }
+
+    final trimmedLoc = campusOrCity.trim().isEmpty ? 'DDU, Nadiad' : campusOrCity.trim();
+    final trimmedBio = majorOrBio.trim();
+    final parts = trimmedName.split(' ');
+    final fName = parts.isNotEmpty ? parts.first : 'User';
+    final lName = parts.length > 1 ? parts.sublist(1).join(' ') : '';
+    final newAvatar = avatarUrl ?? _currentUser!.avatarUrl ?? '👤';
+
+    // Keep authenticated UID constant under all conditions
+    final currentUid = _authService.currentFirebaseUser?.uid ?? _currentUser!.id;
+    final currentUname = _currentUser!.username;
+
+    final updated = _currentUser!.copyWith(
+      id: currentUid,
+      username: currentUname,
+      name: trimmedName,
+      firstName: fName,
+      lastName: lName,
+      campusOrCity: trimmedLoc,
+      majorOrBio: trimmedBio,
+      avatarUrl: newAvatar,
+      updatedAt: DateTime.now(),
+    );
+
+    // 1. Immediately update in-memory state for lightning fast UI response
+    _currentUser = updated;
+    LocalStoreService().saveUser(updated);
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('saved_user', jsonEncode(updated.toJson()));
+
+    // 2. Update in known users registry
+    final kIdx = _knownUsers.indexWhere((k) => k.username.toLowerCase() == currentUname.toLowerCase());
+    if (kIdx != -1) {
+      _knownUsers[kIdx] = updated;
+    } else {
+      _knownUsers.add(updated);
+    }
+    notifyListeners();
+
+    // 3. Update Cloud Firestore (if Firebase is active)
+    try {
+      await _authService.updateProfile(
+        uid: currentUid,
+        name: trimmedName,
+        campusOrCity: trimmedLoc,
+        majorOrBio: trimmedBio,
+        avatarUrl: newAvatar,
+      );
+    } catch (e) {
+      debugPrint('[AuthProvider] Firestore updateProfile notice: $e');
+    }
+
+    // 4. Update Backend Database (MongoDB & in-memory store)
+    try {
+      final remoteUser = await ApiService().updateProfile(
+        id: currentUid,
+        username: currentUname,
+        name: trimmedName,
+        campusOrCity: trimmedLoc,
+        majorOrBio: trimmedBio,
+        avatarUrl: newAvatar,
+      );
+      if (remoteUser != null) {
+        // Guarantee Firebase UID and Username are never overwritten
+        final safeRemote = remoteUser.copyWith(
+          id: currentUid,
+          username: currentUname,
+          firstName: fName,
+          lastName: lName,
+          campusOrCity: trimmedLoc,
+          majorOrBio: trimmedBio,
+          avatarUrl: newAvatar,
+        );
+        _currentUser = safeRemote;
+        LocalStoreService().saveUser(safeRemote);
+        await prefs.setString('saved_user', jsonEncode(safeRemote.toJson()));
+      }
+    } catch (e) {
+      debugPrint('[AuthProvider] Backend updateProfile notice: $e');
+    }
+
+    notifyListeners();
+    return true;
   }
 
   Future<void> addPoints(int pts) async {
@@ -565,13 +605,20 @@ class AuthProvider extends ChangeNotifier {
           }
         }
 
-        if (otherUname.isEmpty && f.id.contains('_')) {
-          final parts = f.id.toLowerCase().replaceAll('@', '').split('_');
-          for (final p in parts) {
-            final cp = p.trim();
-            if (cp.isNotEmpty && cp != cleanMyUsername) {
-              otherUname = cp;
-              break;
+        if (otherUname.isEmpty && f.id.isNotEmpty) {
+          final fid = f.id.toLowerCase().replaceAll('@', '').trim();
+          if (fid.startsWith('${cleanMyUsername}_')) {
+            otherUname = fid.substring(cleanMyUsername.length + 1);
+          } else if (fid.endsWith('_$cleanMyUsername')) {
+            otherUname = fid.substring(0, fid.length - cleanMyUsername.length - 1);
+          } else if (f.id.contains('_')) {
+            final parts = f.id.toLowerCase().replaceAll('@', '').split('_');
+            for (final p in parts) {
+              final cp = p.trim();
+              if (cp.isNotEmpty && cp != cleanMyUsername) {
+                otherUname = cp;
+                break;
+              }
             }
           }
         }
@@ -602,6 +649,13 @@ class AuthProvider extends ChangeNotifier {
           if (!_knownUsers.any((k) => k.username.toLowerCase() == otherUname.toLowerCase())) {
             _knownUsers.add(friendUser);
           }
+          LocalStoreService().cancelFriendRequest(cleanMyUsername, otherUname);
+          _outgoingRequests.removeWhere((r) =>
+              r.receiverUsername.toLowerCase().replaceAll('@', '') == otherUname ||
+              r.senderUsername.toLowerCase().replaceAll('@', '') == otherUname);
+          _incomingRequests.removeWhere((r) =>
+              r.receiverUsername.toLowerCase().replaceAll('@', '') == otherUname ||
+              r.senderUsername.toLowerCase().replaceAll('@', '') == otherUname);
         }
       }
 
@@ -652,9 +706,11 @@ class AuthProvider extends ChangeNotifier {
 
   bool areFriends(String username) {
     final clean = username.trim().toLowerCase().replaceAll('@', '');
-    if (_currentUser != null && _currentUser!.username.toLowerCase() == clean) return true;
+    final myClean = _activeUsername.trim().toLowerCase().replaceAll('@', '');
+    if (clean == myClean) return true;
     if (_friendUsernamesSet.contains(clean)) return true;
-    return LocalStoreService().areFriends(_activeUsername, clean);
+    if (_friendsList.any((f) => f.username.toLowerCase().replaceAll('@', '') == clean)) return true;
+    return LocalStoreService().areFriends(myClean, clean);
   }
 
   List<FriendRequest> getPendingIncomingRequests() {
@@ -746,8 +802,18 @@ class AuthProvider extends ChangeNotifier {
     _frReceivedSub = SocketService().onFriendRequestReceived.listen((data) {
       try {
         final req = FriendRequest.fromJson(data);
-        LocalStoreService().addFriendRequest(req);
-        notifyListeners();
+        final cleanMy = _activeUsername.trim().toLowerCase().replaceAll('@', '');
+        final cleanRec = req.receiverUsername.trim().toLowerCase().replaceAll('@', '');
+        final cleanSender = req.senderUsername.trim().toLowerCase().replaceAll('@', '');
+
+        if (cleanRec == cleanMy && cleanSender != cleanMy) {
+          LocalStoreService().addFriendRequest(req);
+          _incomingRequests.removeWhere((r) =>
+              r.id == req.id ||
+              r.senderUsername.trim().toLowerCase().replaceAll('@', '') == cleanSender);
+          _incomingRequests.insert(0, req);
+          notifyListeners();
+        }
       } catch (e) {
         debugPrint('[AuthProvider] onFriendRequestReceived error: $e');
       }
@@ -756,19 +822,18 @@ class AuthProvider extends ChangeNotifier {
     _frAcceptedSub = SocketService().onFriendRequestAccepted.listen((data) {
       try {
         final reqId = data['requestId'] as String?;
-        final sUser = data['senderUsername'] as String?;
-        final rUser = data['receiverUsername'] as String?;
-        if (reqId != null) {
-          LocalStoreService().respondFriendRequest(reqId, 'accepted');
-        }
-        if (sUser != null && rUser != null) {
-          LocalStoreService().addFriend(sUser, rUser);
-        }
-
+        final sUser = (data['senderUsername'] as String? ?? '').trim().toLowerCase().replaceAll('@', '');
+        final rUser = (data['receiverUsername'] as String? ?? '').trim().toLowerCase().replaceAll('@', '');
         final cleanMy = _activeUsername.trim().toLowerCase().replaceAll('@', '');
-        final sClean = (sUser ?? '').trim().toLowerCase().replaceAll('@', '');
-        final rClean = (rUser ?? '').trim().toLowerCase().replaceAll('@', '');
-        final otherUname = (sClean == cleanMy) ? rClean : (rClean == cleanMy ? sClean : '');
+        final otherUname = (sUser == cleanMy) ? rUser : (rUser == cleanMy ? sUser : '');
+
+        if (reqId != null) {
+          LocalStoreService().respondFriendRequest(reqId, 'accepted', senderUsername: sUser, receiverUsername: rUser);
+        }
+        if (sUser.isNotEmpty && rUser.isNotEmpty) {
+          LocalStoreService().addFriend(sUser, rUser);
+          LocalStoreService().cancelFriendRequest(sUser, rUser);
+        }
 
         if (otherUname.isNotEmpty && otherUname != cleanMy) {
           _friendUsernamesSet.add(otherUname);
@@ -781,14 +846,14 @@ class AuthProvider extends ChangeNotifier {
                 campusOrCity: 'NearTalk Campus',
                 createdAt: DateTime.now(),
               );
-          if (!_friendsList.any((f) => f.username.toLowerCase() == otherUname)) {
+          if (!_friendsList.any((f) => f.username.toLowerCase().replaceAll('@', '') == otherUname)) {
             _friendsList.add(friendUser);
           }
-          if (!_knownUsers.any((k) => k.username.toLowerCase() == otherUname)) {
+          if (!_knownUsers.any((k) => k.username.toLowerCase().replaceAll('@', '') == otherUname)) {
             _knownUsers.add(friendUser);
           }
 
-          // Automatically create direct chat room so new user is added to chats immediately (Instagram-style)
+          // Automatically create direct chat room so new user is added to chats immediately
           final directRoomId = ChatProvider.getDirectRoomId(cleanMy, otherUname);
           final newRoom = ChatRoom(
             id: directRoomId,
@@ -1039,11 +1104,16 @@ class AuthProvider extends ChangeNotifier {
       LocalStoreService().cancelFriendRequest(reqObj.senderUsername, reqObj.receiverUsername);
     }
 
+    final cleanOther = otherUsername.toLowerCase().replaceAll('@', '').trim();
     _incomingRequests.removeWhere(
-      (r) => r.id == requestId || r.senderUsername.toLowerCase() == otherUsername.toLowerCase(),
+      (r) => r.id == requestId ||
+          r.senderUsername.toLowerCase().replaceAll('@', '').trim() == cleanOther ||
+          r.receiverUsername.toLowerCase().replaceAll('@', '').trim() == cleanOther,
     );
     _outgoingRequests.removeWhere(
-      (r) => r.id == requestId || r.receiverUsername.toLowerCase() == otherUsername.toLowerCase(),
+      (r) => r.id == requestId ||
+          r.receiverUsername.toLowerCase().replaceAll('@', '').trim() == cleanOther ||
+          r.senderUsername.toLowerCase().replaceAll('@', '').trim() == cleanOther,
     );
     notifyListeners();
 

@@ -18,87 +18,32 @@ class UserProfileScreen extends StatefulWidget {
 
 class _UserProfileScreenState extends State<UserProfileScreen> {
   final FriendshipService _friendshipService = FriendshipService();
-  RelationshipState _relationshipState = RelationshipState.none;
-  bool _isLoadingState = true;
   bool _isActionInProgress = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _loadRelationshipState();
-  }
-
-  Future<void> _loadRelationshipState() async {
-    final auth = context.read<AuthProvider>();
+  RelationshipState _getRelationship(AuthProvider auth) {
     final currentUser = auth.currentUser;
-    if (currentUser == null) return;
+    if (currentUser == null) return RelationshipState.none;
 
-    if (currentUser.id == widget.user.id || currentUser.username.toLowerCase() == widget.user.username.toLowerCase()) {
-      if (mounted) {
-        setState(() {
-          _relationshipState = RelationshipState.self;
-          _isLoadingState = false;
-        });
-      }
-      return;
+    final myClean = currentUser.username.toLowerCase().replaceAll('@', '').trim();
+    final targetClean = widget.user.username.toLowerCase().replaceAll('@', '').trim();
+
+    if (currentUser.id == widget.user.id || myClean == targetClean) {
+      return RelationshipState.self;
     }
 
-    // 1. Check AuthProvider / LocalStore relationship
-    if (auth.areFriends(widget.user.username)) {
-      if (mounted) {
-        setState(() {
-          _relationshipState = RelationshipState.friends;
-          _isLoadingState = false;
-        });
-      }
-      return;
+    if (auth.areFriends(targetClean)) {
+      return RelationshipState.friends;
     }
 
-    if (auth.isPendingOutgoing(widget.user.username)) {
-      if (mounted) {
-        setState(() {
-          _relationshipState = RelationshipState.pendingOutgoing;
-          _isLoadingState = false;
-        });
-      }
-      return;
+    if (auth.isPendingOutgoing(targetClean)) {
+      return RelationshipState.pendingOutgoing;
     }
 
-    if (auth.isPendingIncoming(widget.user.username)) {
-      if (mounted) {
-        setState(() {
-          _relationshipState = RelationshipState.pendingIncoming;
-          _isLoadingState = false;
-        });
-      }
-      return;
+    if (auth.isPendingIncoming(targetClean)) {
+      return RelationshipState.pendingIncoming;
     }
 
-    // 2. Fallback check with Firebase Firestore if active
-    if (_friendshipService.isFirebaseInitialized) {
-      try {
-        final state = await _friendshipService.getRelationshipState(
-          currentUsername: currentUser.username,
-          currentUserId: currentUser.id,
-          otherUsername: widget.user.username,
-          otherUserId: widget.user.id,
-        );
-        if (mounted) {
-          setState(() {
-            _relationshipState = state;
-            _isLoadingState = false;
-          });
-        }
-        return;
-      } catch (_) {}
-    }
-
-    if (mounted) {
-      setState(() {
-        _relationshipState = RelationshipState.none;
-        _isLoadingState = false;
-      });
-    }
+    return RelationshipState.none;
   }
 
   Future<void> _handleSendRequest() async {
@@ -120,7 +65,6 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
       if (mounted) {
         setState(() {
-          _relationshipState = RelationshipState.pendingOutgoing;
           _isActionInProgress = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
@@ -158,7 +102,6 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
       }
       if (mounted) {
         setState(() {
-          _relationshipState = RelationshipState.none;
           _isActionInProgress = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
@@ -188,7 +131,6 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
       if (mounted) {
         setState(() {
-          _relationshipState = RelationshipState.friends;
           _isActionInProgress = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
@@ -217,7 +159,6 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
       }
       if (mounted) {
         setState(() {
-          _relationshipState = RelationshipState.none;
           _isActionInProgress = false;
         });
       }
@@ -280,7 +221,6 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
       await auth.unfriend(widget.user.username);
       if (mounted) {
         setState(() {
-          _relationshipState = RelationshipState.none;
           _isActionInProgress = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
@@ -298,7 +238,13 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final user = widget.user;
+    final auth = context.watch<AuthProvider>();
+    final isSelf = auth.currentUser != null &&
+        (auth.currentUser!.id == widget.user.id ||
+            auth.currentUser!.username.toLowerCase().replaceAll('@', '') ==
+                widget.user.username.toLowerCase().replaceAll('@', ''));
+    final user = isSelf ? auth.currentUser! : widget.user;
+    final relState = _getRelationship(auth);
 
     return Scaffold(
       backgroundColor: const Color(0xFF0D1117),
@@ -382,7 +328,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
             const SizedBox(height: 20),
 
             // Relationship State Action Button
-            _buildRelationshipActionButton(),
+            _buildRelationshipActionButton(relState),
             const SizedBox(height: 24),
 
             // Bio / About Card
@@ -444,17 +390,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     );
   }
 
-  Widget _buildRelationshipActionButton() {
-    if (_isLoadingState) {
-      return const Center(
-        child: SizedBox(
-          width: 24,
-          height: 24,
-          child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF58A6FF)),
-        ),
-      );
-    }
-
+  Widget _buildRelationshipActionButton(RelationshipState relState) {
     if (_isActionInProgress) {
       return Container(
         height: 44,
@@ -467,9 +403,25 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
       );
     }
 
-    switch (_relationshipState) {
+    switch (relState) {
       case RelationshipState.self:
-        return const SizedBox.shrink();
+        return SizedBox(
+          width: double.infinity,
+          height: 44,
+          child: OutlinedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+            },
+            icon: const Icon(Icons.person_rounded, size: 17, color: Color(0xFF58A6FF)),
+            label: const Text('This is your profile (Edit in Profile tab)',
+                style: TextStyle(color: Color(0xFF58A6FF), fontWeight: FontWeight.bold, fontSize: 13)),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: Color(0xFF30363D)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              backgroundColor: const Color(0xFF161B22),
+            ),
+          ),
+        );
 
       case RelationshipState.friends:
         return Row(

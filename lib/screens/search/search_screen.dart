@@ -426,33 +426,32 @@ class _SearchScreenState extends State<SearchScreen> {
                     ),
                     const SizedBox(width: 8),
 
-                    // Direct Message Button
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF21262D),
-                        foregroundColor: const Color(0xFF58A6FF),
-                        side: const BorderSide(color: Color(0xFF30363D)),
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    // Action Buttons based on relationship:
+                    if (isFriend) ...[
+                      // Accepted Friend: Show "Message" button & clean "Friends" badge
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF238636),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        onPressed: () {
+                          if (currentUser == null) return;
+                          final chatProvider = context.read<ChatProvider>();
+                          final room = chatProvider.startPersonalChat(peerUser: u, currentUser: currentUser);
+                          Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => ChatConversationScreen(roomId: room.id)),
+                          );
+                        },
+                        icon: const Icon(Icons.chat_bubble_rounded, size: 13),
+                        label: const Text('Message', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                       ),
-                      onPressed: () {
-                        if (currentUser == null) return;
-                        final chatProvider = context.read<ChatProvider>();
-                        final room = chatProvider.startPersonalChat(peerUser: u, currentUser: currentUser);
-                        Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => ChatConversationScreen(roomId: room.id)),
-                        );
-                      },
-                      child: const Text('Message', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                    ),
-                    const SizedBox(width: 8),
-
-                    // (Friend Request / Status) Button
-                    if (isFriend)
+                      const SizedBox(width: 6),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 6),
                         decoration: BoxDecoration(
                           color: const Color(0xFF21262D),
                           borderRadius: BorderRadius.circular(8),
@@ -462,77 +461,76 @@ class _SearchScreenState extends State<SearchScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(Icons.check, size: 12, color: Color(0xFF238636)),
-                            SizedBox(width: 4),
-                            Text('Friends', style: TextStyle(fontSize: 11.5, color: Color(0xFF238636), fontWeight: FontWeight.bold)),
+                            SizedBox(width: 3),
+                            Text('Friends', style: TextStyle(fontSize: 11, color: Color(0xFF238636), fontWeight: FontWeight.bold)),
                           ],
                         ),
-                      )
-                    else if (isOutgoing)
-                      OutlinedButton(
+                      ),
+                    ] else if (isOutgoing) ...[
+                      // Pending Outgoing Request: Show "Requested"
+                      OutlinedButton.icon(
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF8B949E),
-                          side: const BorderSide(color: Color(0xFF30363D)),
+                          foregroundColor: const Color(0xFFD29922),
+                          side: const BorderSide(color: Color(0xFFD29922)),
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                           minimumSize: Size.zero,
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
-                        onPressed: null,
-                        child: const Text('Requested', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                      )
-                    else if (isIncoming)
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF238636),
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                              minimumSize: Size.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            ),
-                            onPressed: () async {
-                              final incoming = auth.getIncomingRequestFrom(u.username);
-                              if (incoming != null) {
-                                await auth.respondFriendRequest(
-                                  incoming.id,
-                                  'accepted',
-                                  senderUsername: incoming.senderUsername,
-                                );
-                              }
-                              if (mounted) setState(() {});
-                            },
-                            child: const Text('Accept', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                          ),
-                          const SizedBox(width: 6),
-                          OutlinedButton(
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFFDA3633),
-                              side: const BorderSide(color: Color(0xFFDA3633)),
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                              minimumSize: Size.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            ),
-                            onPressed: () async {
-                              final incoming = auth.getIncomingRequestFrom(u.username);
-                              if (incoming != null) {
-                                await auth.respondFriendRequest(
-                                  incoming.id,
-                                  'declined',
-                                  senderUsername: incoming.senderUsername,
-                                );
-                              }
-                              if (mounted) setState(() {});
-                            },
-                            child: const Text('Reject', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                          ),
-                        ],
-                      )
-                    else
+                        onPressed: () async {
+                          await auth.cancelFriendRequest(u.username);
+                        },
+                        icon: const Icon(Icons.hourglass_top_rounded, size: 13, color: Color(0xFFD29922)),
+                        label: const Text('Requested', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                      ),
+                    ] else if (isIncoming) ...[
+                      // Pending Incoming Request: Show Accept & Reject
                       ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF238636),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        onPressed: () async {
+                          final incoming = auth.getIncomingRequestFrom(u.username);
+                          if (incoming != null) {
+                            await auth.respondFriendRequest(
+                              incoming.id,
+                              'accepted',
+                              senderUsername: incoming.senderUsername,
+                            );
+                          }
+                        },
+                        child: const Text('Accept', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      ),
+                      const SizedBox(width: 6),
+                      OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFFDA3633),
+                          side: const BorderSide(color: Color(0xFFDA3633)),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        onPressed: () async {
+                          final incoming = auth.getIncomingRequestFrom(u.username);
+                          if (incoming != null) {
+                            await auth.respondFriendRequest(
+                              incoming.id,
+                              'declined',
+                              senderUsername: incoming.senderUsername,
+                            );
+                          }
+                        },
+                        child: const Text('Reject', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      ),
+                    ] else ...[
+                      // Not friends, not requested: Show "Add Friend"
+                      ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF238636),
                           foregroundColor: Colors.white,
@@ -550,11 +548,12 @@ class _SearchScreenState extends State<SearchScreen> {
                                 backgroundColor: const Color(0xFF238636),
                               ),
                             );
-                            setState(() {});
                           }
                         },
-                        child: const Text('Request', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        icon: const Icon(Icons.person_add_rounded, size: 14),
+                        label: const Text('Add Friend', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                       ),
+                    ],
                   ],
                 ),
               ],

@@ -23,16 +23,118 @@ class ChatProvider extends ChangeNotifier {
   StreamSubscription<Map<String, dynamic>>? _likeSub;
   StreamSubscription<Map<String, dynamic>>? _dislikeSub;
   StreamSubscription<Map<String, dynamic>>? _seenSub;
+  String? _currentUsername;
+  StreamSubscription? _userFirestoreMessagesSub;
 
   List<ChatRoom> get rooms => _rooms;
   String? getTypingUser(String roomId) => _typingUser[roomId];
   bool isTyping(String roomId) => _typingUser[roomId] != null;
+  String? get currentUsername => _currentUsername;
 
   ChatProvider() {
     _initChat();
   }
 
   int get totalUnread => _rooms.fold<int>(0, (acc, r) => acc + r.unreadCount);
+
+  void setCurrentUser(User? user) {
+    if (user == null) {
+      _currentUsername = null;
+      _userFirestoreMessagesSub?.cancel();
+      return;
+    }
+    final clean = user.username.toLowerCase().replaceAll('@', '').trim();
+    if (_currentUsername == clean && _userFirestoreMessagesSub != null) return;
+    _currentUsername = clean;
+    _initUserFirestoreSync(clean);
+  }
+
+  void _initUserFirestoreSync(String myUsername) {
+    _userFirestoreMessagesSub?.cancel();
+    if (Firebase.apps.isEmpty || myUsername.isEmpty) return;
+
+    try {
+      _userFirestoreMessagesSub = FirebaseFirestore.instance
+          .collection('messages')
+          .snapshots()
+          .listen((snap) {
+        bool changed = false;
+        for (final doc in snap.docs) {
+          final data = doc.data();
+          final rId = (data['roomId'] as String? ?? '').toLowerCase();
+
+          // Check if this message belongs to a DM involving this user
+          final isMyDm = rId.startsWith('dm-') &&
+              (rId.startsWith('dm-${myUsername}_') ||
+               rId.endsWith('_$myUsername') ||
+               rId.contains('_${myUsername}_'));
+
+          if (isMyDm) {
+            final msg = ChatMessage.fromJson({
+              ...data,
+              'id': doc.id,
+            });
+
+            if (!_messages.containsKey(rId)) {
+              _messages[rId] = [];
+            }
+
+            final existingIdx = _messages[rId]!.indexWhere((m) =>
+                m.id == msg.id ||
+                (m.senderId == msg.senderId &&
+                    m.content.trim() == msg.content.trim() &&
+                    m.timestamp.difference(msg.timestamp).abs().inSeconds < 5));
+            if (existingIdx == -1) {
+              _messages[rId]!.add(msg);
+              LocalStoreService().addMessage(msg);
+              changed = true;
+            }
+
+            // Ensure room exists in _rooms
+            final otherUname = getOtherUsernameFromDmRoomId(rId, myUsername) ?? '';
+            final roomIdx = _rooms.indexWhere((r) => r.id == rId);
+            if (roomIdx == -1) {
+              final newRoom = ChatRoom(
+                id: rId,
+                title: otherUname.isNotEmpty ? '@$otherUname' : (msg.senderName.startsWith('@') ? msg.senderName : '@${msg.senderName}'),
+                subtitle: 'Direct Message',
+                avatarEmoji: '👤',
+                isGroup: false,
+                lastMessage: msg.content,
+                lastMessageTime: msg.timestamp,
+                unreadCount: 0,
+                isOnline: true,
+                participantIds: [msg.senderId],
+              );
+              _rooms.insert(0, newRoom);
+              LocalStoreService().addOrUpdateRoom(newRoom);
+              changed = true;
+            } else {
+              // Update last message if newer
+              final currentRoom = _rooms[roomIdx];
+              if (msg.timestamp.isAfter(currentRoom.lastMessageTime)) {
+                _rooms[roomIdx] = currentRoom.copyWith(
+                  lastMessage: msg.content,
+                  lastMessageTime: msg.timestamp,
+                );
+                LocalStoreService().addOrUpdateRoom(_rooms[roomIdx]);
+                changed = true;
+              }
+            }
+          }
+        }
+
+        if (changed) {
+          _rooms.sort((a, b) => b.lastMessageTime.compareTo(a.lastMessageTime));
+          notifyListeners();
+        }
+      }, onError: (err) {
+        debugPrint('[ChatProvider] Firestore messages stream notice: $err');
+      });
+    } catch (e) {
+      debugPrint('[ChatProvider] _initUserFirestoreSync error: $e');
+    }
+  }
 
   void _initChat() {
     // 1. Immediately load rooms from local storage (purge dummy rooms)
@@ -294,7 +396,7 @@ class ChatProvider extends ChangeNotifier {
       orElse: () {
         final newRoom = ChatRoom(
           id: 'room-$communityId',
-          title: '$communityName Chat',
+          title: communityName,
           subtitle: 'Community discussion',
           avatarEmoji: iconEmoji,
           communityId: communityId,
@@ -457,6 +559,20 @@ class ChatProvider extends ChangeNotifier {
     return 'dm-${sorted[0]}_${sorted[1]}';
   }
 
+  /// Safely extracts the other peer's username from a deterministic DM room ID
+  /// (Works seamlessly even when usernames contain underscores, dots, or hyphens)
+  static String? getOtherUsernameFromDmRoomId(String roomId, String currentUsername) {
+    if (!roomId.startsWith('dm-')) return null;
+    final stripped = roomId.substring(3).toLowerCase().trim();
+    final cleanCurrent = currentUsername.toLowerCase().replaceAll('@', '').trim();
+    if (stripped.startsWith('${cleanCurrent}_')) {
+      return stripped.substring(cleanCurrent.length + 1);
+    } else if (stripped.endsWith('_$cleanCurrent')) {
+      return stripped.substring(0, stripped.length - cleanCurrent.length - 1);
+    }
+    return null;
+  }
+
   ChatRoom startPersonalChat({required User peerUser, required User currentUser}) {
     final directRoomId = getDirectRoomId(currentUser.username, peerUser.username);
 
@@ -481,6 +597,27 @@ class ChatProvider extends ChangeNotifier {
     _rooms.insert(0, newRoom);
     LocalStoreService().addOrUpdateRoom(newRoom);
     _listenToRoomFirestore(directRoomId);
+
+    // Sync room to Firestore for persistence
+    if (Firebase.apps.isNotEmpty) {
+      try {
+        final cUserClean = currentUser.username.toLowerCase().replaceAll('@', '');
+        final pUserClean = peerUser.username.toLowerCase().replaceAll('@', '');
+        FirebaseFirestore.instance.collection('chatRooms').doc(directRoomId).set({
+          'id': directRoomId,
+          'title': peerUser.handle,
+          'subtitle': peerUser.name,
+          'avatarEmoji': '👤',
+          'isGroup': false,
+          'lastMessage': newRoom.lastMessage,
+          'lastMessageTime': FieldValue.serverTimestamp(),
+          'participantIds': [currentUser.id, peerUser.id],
+          'participantUsernames': [cUserClean, pUserClean],
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } catch (_) {}
+    }
+
     notifyListeners();
     return newRoom;
   }
@@ -794,6 +931,7 @@ class ChatProvider extends ChangeNotifier {
     _likeSub?.cancel();
     _dislikeSub?.cancel();
     _seenSub?.cancel();
+    _userFirestoreMessagesSub?.cancel();
     super.dispose();
   }
 }

@@ -73,7 +73,8 @@ class _PeopleScreenState extends State<PeopleScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final currentUser = context.watch<AuthProvider>().currentUser;
+    final auth = context.watch<AuthProvider>();
+    final currentUser = auth.currentUser;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0D1117),
@@ -182,15 +183,15 @@ class _PeopleScreenState extends State<PeopleScreen> {
           // 3. User List / Search Results
           Expanded(
             child: _isSearching
-                ? _buildSearchResultsView()
-                : _buildSuggestedPeersView(),
+                ? _buildSearchResultsView(auth, currentUser)
+                : _buildSuggestedPeersView(auth, currentUser),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSearchResultsView() {
+  Widget _buildSearchResultsView(AuthProvider auth, User? currentUser) {
     if (_searchResults.isEmpty) {
       return Center(
         child: Column(
@@ -217,12 +218,12 @@ class _PeopleScreenState extends State<PeopleScreen> {
       itemCount: _searchResults.length,
       separatorBuilder: (_, __) => const Divider(color: Color(0xFF21262D), height: 1),
       itemBuilder: (context, index) {
-        return _buildUserTile(_searchResults[index]);
+        return _buildUserTile(_searchResults[index], auth, currentUser);
       },
     );
   }
 
-  Widget _buildSuggestedPeersView() {
+  Widget _buildSuggestedPeersView(AuthProvider auth, User? currentUser) {
     if (_isLoadingSuggestions) {
       return const Center(
         child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF58A6FF)),
@@ -266,12 +267,16 @@ class _PeopleScreenState extends State<PeopleScreen> {
             ),
           ),
         ),
-        ..._suggestedUsers.map((u) => _buildUserTile(u)),
+        ..._suggestedUsers.map((u) => _buildUserTile(u, auth, currentUser)),
       ],
     );
   }
 
-  Widget _buildUserTile(User user) {
+  Widget _buildUserTile(User user, AuthProvider auth, User? currentUser) {
+    final isFriend = auth.areFriends(user.username);
+    final isOutgoing = auth.isPendingOutgoing(user.username);
+    final isIncoming = auth.isPendingIncoming(user.username);
+
     return InkWell(
       onTap: () {
         Navigator.push(
@@ -337,28 +342,106 @@ class _PeopleScreenState extends State<PeopleScreen> {
               ),
             ),
             const SizedBox(width: 8),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF21262D),
-                foregroundColor: const Color(0xFF58A6FF),
-                side: const BorderSide(color: Color(0xFF30363D)),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+
+            // Action Buttons
+            if (isFriend) ...[
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF238636),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: () {
+                  if (currentUser == null) return;
+                  final chatProvider = context.read<ChatProvider>();
+                  final room = chatProvider.startPersonalChat(peerUser: user, currentUser: currentUser);
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => ChatConversationScreen(roomId: room.id)),
+                  );
+                },
+                icon: const Icon(Icons.chat_bubble_rounded, size: 13),
+                label: const Text('Message', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
               ),
-              onPressed: () {
-                final auth = context.read<AuthProvider>();
-                final currentUser = auth.currentUser;
-                if (currentUser == null) return;
-                final chatProvider = context.read<ChatProvider>();
-                final room = chatProvider.startPersonalChat(peerUser: user, currentUser: currentUser);
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => ChatConversationScreen(roomId: room.id)),
-                );
-              },
-              child: const Text('Message', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-            ),
+            ] else if (isOutgoing) ...[
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFFD29922),
+                  side: const BorderSide(color: Color(0xFFD29922)),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: () async {
+                  await auth.cancelFriendRequest(user.username);
+                },
+                icon: const Icon(Icons.hourglass_top_rounded, size: 13, color: Color(0xFFD29922)),
+                label: const Text('Requested', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+              ),
+            ] else if (isIncoming) ...[
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF238636),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: () async {
+                  final incoming = auth.getIncomingRequestFrom(user.username);
+                  if (incoming != null) {
+                    await auth.respondFriendRequest(incoming.id, 'accepted', senderUsername: incoming.senderUsername);
+                  }
+                },
+                child: const Text('Accept', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(width: 6),
+              OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFFDA3633),
+                  side: const BorderSide(color: Color(0xFFDA3633)),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: () async {
+                  final incoming = auth.getIncomingRequestFrom(user.username);
+                  if (incoming != null) {
+                    await auth.respondFriendRequest(incoming.id, 'declined', senderUsername: incoming.senderUsername);
+                  }
+                },
+                child: const Text('Reject', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+              ),
+            ] else ...[
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF238636),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: () async {
+                  final success = await auth.sendFriendRequest(user.username);
+                  if (mounted && success) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Friend request sent to @${user.username}! 🤝'),
+                        backgroundColor: const Color(0xFF238636),
+                      ),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.person_add_rounded, size: 14),
+                label: const Text('Add Friend', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+              ),
+            ],
             const SizedBox(width: 4),
             const Icon(Icons.chevron_right_rounded, color: Color(0xFF484F58), size: 20),
           ],

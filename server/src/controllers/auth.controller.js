@@ -383,7 +383,7 @@ exports.updateProfile = async (req, res) => {
           if (avatarUrl) user.avatarUrl = avatarUrl;
           await user.save();
           updatedUser = {
-            id: user._id.toString(),
+            id: id || user._id.toString(),
             username: user.username,
             name: user.name,
             email: user.email,
@@ -400,7 +400,7 @@ exports.updateProfile = async (req, res) => {
     }
 
     // Also update in in-memory store
-    const storeUser = store.users.find(
+    let storeUser = store.users.find(
       (u) =>
         (id && u.id === id) ||
         (cleanUsername && u.username && u.username.toLowerCase() === cleanUsername)
@@ -412,7 +412,29 @@ exports.updateProfile = async (req, res) => {
       if (avatarUrl) storeUser.avatarUrl = avatarUrl;
       if (!updatedUser) {
         const { password, ...safe } = storeUser;
-        updatedUser = safe;
+        updatedUser = {
+          ...safe,
+          id: id || safe.id,
+        };
+      }
+    } else if (cleanUsername) {
+      // Auto-upsert into store if user only registered in Firebase
+      storeUser = {
+        id: id || `user_${cleanUsername}`,
+        username: cleanUsername,
+        name: (name || cleanUsername).trim(),
+        email: `${cleanUsername}@neartalk.local`,
+        campusOrCity: (campusOrCity || 'DDU, Nadiad').trim(),
+        majorOrBio: (majorOrBio || 'NearTalk Member').trim(),
+        avatarUrl: avatarUrl || '👤',
+        reputation: 50,
+        joinedCommunityIds: [],
+        badges: ['Newcomer'],
+        isCollegeVerified: false,
+      };
+      store.users.push(storeUser);
+      if (!updatedUser) {
+        updatedUser = storeUser;
       }
     }
 

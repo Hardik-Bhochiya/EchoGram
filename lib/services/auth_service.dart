@@ -283,17 +283,39 @@ class AuthService {
     final updates = <String, dynamic>{
       'updatedAt': FieldValue.serverTimestamp(),
     };
-    if (name != null) updates['name'] = name.trim();
-    if (campusOrCity != null) updates['campusOrCity'] = campusOrCity.trim();
-    if (majorOrBio != null) updates['majorOrBio'] = majorOrBio.trim();
-    if (avatarUrl != null) updates['avatarUrl'] = avatarUrl;
+    if (name != null) {
+      final cleanName = name.trim();
+      updates['name'] = cleanName;
+      updates['displayName'] = cleanName;
+      final parts = cleanName.split(' ');
+      updates['firstName'] = parts.isNotEmpty ? parts.first : 'User';
+      updates['lastName'] = parts.length > 1 ? parts.sublist(1).join(' ') : '';
+    }
+    if (campusOrCity != null) {
+      final cleanLoc = campusOrCity.trim();
+      updates['campusOrCity'] = cleanLoc;
+      updates['city'] = cleanLoc;
+    }
+    if (majorOrBio != null) {
+      final cleanBio = majorOrBio.trim();
+      updates['majorOrBio'] = cleanBio;
+      updates['bio'] = cleanBio;
+    }
+    if (avatarUrl != null) {
+      updates['avatarUrl'] = avatarUrl;
+      updates['photoUrl'] = avatarUrl;
+    }
 
     try {
       await _firestore!.collection('users').doc(uid).set(updates, SetOptions(merge: true));
       if (name != null && _auth?.currentUser != null) {
-        await _auth!.currentUser!.updateDisplayName(name.trim());
+        try {
+          await _auth!.currentUser!.updateDisplayName(name.trim());
+        } catch (_) {}
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[AuthService] Firestore updateProfile notice: $e');
+    }
   }
 
   /// Sign out

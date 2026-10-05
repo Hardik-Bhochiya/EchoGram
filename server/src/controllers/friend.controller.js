@@ -118,6 +118,7 @@ exports.sendFriendRequest = async (req, res) => {
 
     // Notify receiver via WebSocket immediately
     emitSocketEvent(req, 'friend_request_received', `user-${rUser}`, newRequestData);
+    emitSocketEvent(req, 'friend_request_received', `user-@${rUser}`, newRequestData);
 
     return res.status(201).json({ message: 'Friend request sent', request: newRequestData });
   } catch (err) {
@@ -186,6 +187,18 @@ exports.respondFriendRequest = async (req, res) => {
         senderUsername: u1,
         receiverUsername: u2,
       });
+      emitSocketEvent(req, 'friend_request_accepted', `user-@${u1}`, {
+        requestId,
+        status: 'accepted',
+        senderUsername: u1,
+        receiverUsername: u2,
+      });
+      emitSocketEvent(req, 'friend_request_accepted', `user-@${u2}`, {
+        requestId,
+        status: 'accepted',
+        senderUsername: u1,
+        receiverUsername: u2,
+      });
     } else {
       // Rejection / Decline: completely remove pending request so sender can request again
       if (isConnected()) {
@@ -203,6 +216,18 @@ exports.respondFriendRequest = async (req, res) => {
         receiverUsername: u2,
       });
       emitSocketEvent(req, 'friend_request_declined', `user-${u2}`, {
+        requestId,
+        status: 'declined',
+        senderUsername: u1,
+        receiverUsername: u2,
+      });
+      emitSocketEvent(req, 'friend_request_declined', `user-@${u1}`, {
+        requestId,
+        status: 'declined',
+        senderUsername: u1,
+        receiverUsername: u2,
+      });
+      emitSocketEvent(req, 'friend_request_declined', `user-@${u2}`, {
         requestId,
         status: 'declined',
         senderUsername: u1,

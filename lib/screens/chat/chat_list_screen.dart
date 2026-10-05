@@ -24,18 +24,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   void _showNewChatSheet(BuildContext context, AuthProvider auth, ChatProvider chatProvider, User currentUser) {
-    final friends = auth.getFriends();
-    final knownUsers = auth.knownUsers.where((u) => u.username.toLowerCase() != currentUser.username.toLowerCase()).toList();
-
-    final Map<String, User> peersMap = {};
-    for (final f in friends) {
-      peersMap[f.username.toLowerCase()] = f;
-    }
-    for (final u in knownUsers) {
-      peersMap.putIfAbsent(u.username.toLowerCase(), () => u);
-    }
-
-    final peers = peersMap.values.toList();
+    final peers = auth.getFriends();
 
     showModalBottomSheet(
       context: context,
@@ -184,6 +173,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
       );
     }
 
+    chatProvider.setCurrentUser(currentUser);
+
     final cleanCurrent = currentUser.username.toLowerCase().replaceAll('@', '').trim();
 
     // 1. Gather all active rooms (both direct and group)
@@ -200,22 +191,32 @@ class _ChatListScreenState extends State<ChatListScreen> {
       String displaySubtitle = room.subtitle ?? (room.isGroup ? 'Group Chat' : 'Direct Message');
 
       if (!room.isGroup) {
-        if (room.id.startsWith('dm-')) {
-          final parts = room.id.substring(3).split('_');
-          if (parts.length == 2) {
-            final p1 = parts[0].toLowerCase().trim();
-            final p2 = parts[1].toLowerCase().trim();
-            final other = p1 == cleanCurrent ? p2 : (p2 == cleanCurrent ? p1 : (p1.isNotEmpty ? p1 : p2));
-            if (other.isNotEmpty) {
-              displayTitle = '@$other';
-            }
+        String otherUser = ChatProvider.getOtherUsernameFromDmRoomId(room.id, cleanCurrent) ?? '';
+        if (otherUser.isEmpty) {
+          if (room.title.startsWith('@')) {
+            otherUser = room.title;
+          } else if (room.subtitle != null && room.subtitle!.startsWith('@')) {
+            otherUser = room.subtitle!;
+          } else {
+            otherUser = room.title;
           }
-        } else if (room.subtitle != null && room.subtitle!.startsWith('@')) {
-          displayTitle = room.subtitle!;
-        } else if (room.title.startsWith('@')) {
-          displayTitle = room.title;
-        } else {
-          displayTitle = '@${room.title.toLowerCase().replaceAll(' ', '')}';
+        }
+
+        otherUser = otherUser.replaceAll('@', '').replaceAll('(', '').replaceAll(')', '').trim();
+        otherUser = otherUser.replaceAll(RegExp(r'\s+chat\b', caseSensitive: false), '').trim();
+
+        // Logical workflow: Show direct chat if friends OR if messages were exchanged!
+        final isFriend = otherUser.isNotEmpty && authProvider.areFriends(otherUser);
+        final hasActiveConversation = hasLastMsg || room.lastMessage.trim().isNotEmpty;
+        if (!isFriend && !hasActiveConversation) {
+          continue;
+        }
+
+        displayTitle = otherUser.isNotEmpty ? '@$otherUser' : room.title;
+      } else {
+        displayTitle = room.title.trim();
+        if (displayTitle.toLowerCase().endsWith(' chat')) {
+          displayTitle = displayTitle.substring(0, displayTitle.length - 5).trim();
         }
       }
 
@@ -241,12 +242,12 @@ class _ChatListScreenState extends State<ChatListScreen> {
         if (!itemMap.containsKey(roomId)) {
           itemMap[roomId] = _UnifiedChatItem(
             roomId: roomId,
-            title: '@${f.username}',
+            title: '@$clean',
             subtitle: f.name.isNotEmpty ? f.name : 'Connected Peer',
             avatarText: (f.avatarUrl != null && f.avatarUrl!.isNotEmpty) ? f.avatarUrl! : '👤',
             isGroup: false,
             unreadCount: 0,
-            lastMessageText: 'Say hello to @${f.username} 👋',
+            lastMessageText: 'Say hello to @$clean 👋',
             lastMessageTime: '',
             sortTime: DateTime.fromMillisecondsSinceEpoch(0),
             isOnline: true,

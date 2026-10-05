@@ -6,6 +6,7 @@ import 'search/search_screen.dart';
 import 'chat/chat_list_screen.dart';
 import 'profile/profile_screen.dart';
 import '../providers/chat_provider.dart';
+import '../providers/auth_provider.dart';
 
 class MainNavScreen extends StatefulWidget {
   const MainNavScreen({super.key});
@@ -29,6 +30,16 @@ class _MainNavScreenState extends State<MainNavScreen> {
   Widget build(BuildContext context) {
     const activeColor = Color(0xFF58A6FF); // GitHub Blue
     const inactiveColor = Color(0xFF8B949E); // GitHub Muted Gray
+
+    final authProvider = context.watch<AuthProvider>();
+    final currentUser = authProvider.currentUser;
+    if (currentUser != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          context.read<ChatProvider>().setCurrentUser(currentUser);
+        }
+      });
+    }
 
     final chatProvider = context.watch<ChatProvider>();
     final totalUnreadChat = chatProvider.rooms.fold<int>(0, (sum, r) => sum + r.unreadCount);
