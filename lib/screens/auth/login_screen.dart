@@ -107,7 +107,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 4),
                   const Text(
-                    'Location-Based Community & Social Chat App',
+                    'Real-Time Messaging & Chat App',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 13,

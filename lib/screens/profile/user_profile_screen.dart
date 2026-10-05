@@ -314,18 +314,21 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
             ),
             const SizedBox(height: 8),
 
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.location_on_outlined, size: 14, color: Color(0xFF8B949E)),
-                const SizedBox(width: 4),
-                Text(
-                  user.campusOrCity,
-                  style: const TextStyle(fontSize: 13, color: Color(0xFF8B949E)),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
+            if (user.campusOrCity.isNotEmpty) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.location_on_outlined, size: 14, color: Color(0xFF8B949E)),
+                  const SizedBox(width: 4),
+                  Text(
+                    user.campusOrCity,
+                    style: const TextStyle(fontSize: 13, color: Color(0xFF8B949E)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+            ],
+            const SizedBox(height: 8),
 
             // Relationship State Action Button
             _buildRelationshipActionButton(relState),

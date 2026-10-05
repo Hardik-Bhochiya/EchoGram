@@ -19,8 +19,8 @@ class ChatAttachmentSheet extends StatelessWidget {
       {'icon': Icons.image_rounded, 'color': const Color(0xFF58A6FF), 'title': 'Photo / Image', 'type': 'photo'},
       {'icon': Icons.camera_alt_rounded, 'color': const Color(0xFFBC8CFF), 'title': 'Camera', 'type': 'camera'},
       {'icon': Icons.description_rounded, 'color': const Color(0xFF388BFD), 'title': 'Document / Notes', 'type': 'document'},
-      {'icon': Icons.location_on_rounded, 'color': const Color(0xFF238636), 'title': 'Campus Location', 'type': 'location'},
-      {'icon': Icons.poll_rounded, 'color': const Color(0xFFD29922), 'title': 'Campus Poll', 'type': 'poll'},
+      {'icon': Icons.contact_page_rounded, 'color': const Color(0xFF238636), 'title': 'Contact', 'type': 'contact'},
+      {'icon': Icons.poll_rounded, 'color': const Color(0xFFD29922), 'title': 'Create Poll', 'type': 'poll'},
       {'icon': Icons.mic_rounded, 'color': const Color(0xFF79C0FF), 'title': 'Audio Note', 'type': 'audio'},
     ];
 

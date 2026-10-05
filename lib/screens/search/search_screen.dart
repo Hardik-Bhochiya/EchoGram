@@ -381,7 +381,9 @@ class _SearchScreenState extends State<SearchScreen> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '${u.name.isNotEmpty ? u.name : "Member"} • ${u.campusOrCity}',
+                        u.campusOrCity.isNotEmpty
+                            ? '${u.name.isNotEmpty ? u.name : "Member"} • ${u.campusOrCity}'
+                            : (u.name.isNotEmpty ? u.name : "EchoGram Member"),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(color: Color(0xFF8B949E), fontSize: 12),

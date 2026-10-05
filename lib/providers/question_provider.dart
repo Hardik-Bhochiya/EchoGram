@@ -29,7 +29,7 @@ class QuestionProvider extends ChangeNotifier {
     'Anonymous Owl 🦉',
     'Curious Badger 🦡',
     'Silent Koala 🐨',
-    'Campus Fox 🦊',
+    'Echo Fox 🦊',
     'Swift Falcon 🦅',
   ];
 

@@ -22,7 +22,7 @@ class Community {
     required this.description,
     required this.regionId,
     required this.regionName,
-    this.locationSpot = 'DDU Campus',
+    this.locationSpot = 'General',
     this.creatorId = '',
     required this.category,
     required this.memberCount,
@@ -33,10 +33,10 @@ class Community {
     this.isGroupType = true,
     this.rules = const [
       'Respect & Civility: Treat all members with dignity. No harassment, abusive words, or bullying.',
-      'Authentic Local Info: Keep questions and discussions genuine and relevant to this community.',
+      'Constructive Discussions: Keep conversations genuine, friendly, and helpful.',
       'No Spam or Ads: Commercial promotions, phishing links, and repetitive spam are strictly prohibited.',
-      'Privacy & Anonymity: Respect anonymity of posters. Never attempt to expose real identities.',
-      'Academic & Campus Integrity: Abide by student conduct guidelines and community safety standards.',
+      'Privacy: Respect privacy and personal information of members.',
+      'Community Safety: Abide by group conduct guidelines and safety standards.',
     ],
     this.members = const [],
   });

@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
-import '../../services/local_store_service.dart';
 import '../main_nav_screen.dart';
 
 class SignUpScreen extends StatefulWidget {
@@ -20,11 +19,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-  final _customLocationController = TextEditingController();
-
-  String _selectedLocation = 'DDU Nadiad';
-  List<String> _locations = ['DDU Nadiad', 'Nadiad', 'Ahmedabad', 'Vadodara', 'Gandhinagar'];
-  bool _isCustomLocation = false;
+  final _bioController = TextEditingController();
 
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
@@ -37,13 +32,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
   void initState() {
     super.initState();
     _usernameController.addListener(_onUsernameChanged);
-    final savedLocs = LocalStoreService().getLocations();
-    if (savedLocs.isNotEmpty) {
-      _locations = List.from(savedLocs);
-      if (!_locations.contains(_selectedLocation)) {
-        _selectedLocation = _locations.first;
-      }
-    }
   }
 
   @override
@@ -56,7 +44,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
-    _customLocationController.dispose();
+    _bioController.dispose();
     super.dispose();
   }
 
@@ -120,12 +108,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
         return;
       }
 
-      final effectiveLocation = _isCustomLocation && _customLocationController.text.trim().isNotEmpty
-          ? _customLocationController.text.trim()
-          : _selectedLocation;
-
-      // Automatically register the location into app registry if new
-      LocalStoreService().addLocation(effectiveLocation);
+      final bio = _bioController.text.trim().isNotEmpty
+          ? _bioController.text.trim()
+          : 'Hey there! I am using EchoGram';
 
       final auth = context.read<AuthProvider>();
       final uName = _usernameController.text.trim().toLowerCase().replaceAll('@', '');
@@ -140,8 +125,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
         lastName: lName,
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
-        campusOrCity: effectiveLocation,
-        majorOrBio: '$effectiveLocation Community Member',
+        campusOrCity: '',
+        majorOrBio: bio,
       );
 
       if (success && mounted) {
@@ -257,7 +242,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                       CircleAvatar(
                         radius: 22,
                         backgroundColor: Color(0xFF21262D),
-                        child: Text('📍', style: TextStyle(fontSize: 22)),
+                        child: Text('💬', style: TextStyle(fontSize: 22)),
                       ),
                       SizedBox(width: 14),
                       Expanded(
@@ -265,12 +250,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Join Location Communities',
+                              'Join EchoGram',
                               style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.bold, color: Color(0xFFF0F6FC)),
                             ),
                             SizedBox(height: 2),
                             Text(
-                              'Connect with peers in your city, join local groups, and chat.',
+                              'Connect with friends, chat in real-time, and join groups.',
                               style: TextStyle(fontSize: 12, color: Color(0xFF8B949E)),
                             ),
                           ],
@@ -455,106 +440,30 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                // Location * Dropdown & Add Location
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'COLLEGE / LOCATION *',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF8B949E), letterSpacing: 0.6),
-                    ),
-                    GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _isCustomLocation = !_isCustomLocation;
-                        });
-                      },
-                      child: Text(
-                        _isCustomLocation ? 'Select from list' : '+ Add New Location',
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF58A6FF)),
-                      ),
-                    ),
-                  ],
+                // Status / Bio (Optional)
+                const Text(
+                  'STATUS / BIO (OPTIONAL)',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF8B949E), letterSpacing: 0.6),
                 ),
                 const SizedBox(height: 6),
-                if (!_isCustomLocation)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF161B22),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFF30363D)),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        value: _locations.contains(_selectedLocation) ? _selectedLocation : (_locations.isNotEmpty ? _locations.first : null),
-                        dropdownColor: const Color(0xFF21262D),
-                        style: const TextStyle(color: Color(0xFFF0F6FC), fontSize: 14),
-                        icon: const Icon(Icons.arrow_drop_down_rounded, color: Color(0xFF58A6FF)),
-                        isExpanded: true,
-                        items: [
-                          ..._locations.map((loc) {
-                            return DropdownMenuItem(
-                              value: loc,
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.location_on_rounded, color: Color(0xFF58A6FF), size: 16),
-                                  const SizedBox(width: 8),
-                                  Text(loc, style: const TextStyle(fontWeight: FontWeight.w600)),
-                                ],
-                              ),
-                            );
-                          }),
-                          const DropdownMenuItem(
-                            value: '__ADD_NEW__',
-                            child: Row(
-                              children: [
-                                Icon(Icons.add_location_alt_rounded, color: Color(0xFF238636), size: 16),
-                                SizedBox(width: 8),
-                                Text('+ Add New Location / College...', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF238636))),
-                              ],
-                            ),
-                          ),
-                        ],
-                        onChanged: (val) {
-                          if (val == '__ADD_NEW__') {
-                            setState(() => _isCustomLocation = true);
-                          } else if (val != null) {
-                            setState(() => _selectedLocation = val);
-                          }
-                        },
-                      ),
-                    ),
-                  )
-                else
-                  Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF161B22),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFF58A6FF)),
-                    ),
-                    child: TextFormField(
-                      controller: _customLocationController,
-                      style: const TextStyle(color: Color(0xFFF0F6FC), fontSize: 14),
-                      decoration: InputDecoration(
-                        prefixIcon: const Icon(Icons.add_location_alt_rounded, color: Color(0xFF58A6FF), size: 18),
-                        hintText: 'Enter college or city (e.g. DDU, Nadiad)',
-                        hintStyle: const TextStyle(color: Color(0xFF8B949E), fontSize: 13),
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        suffixIcon: IconButton(
-                          icon: const Icon(Icons.close_rounded, color: Color(0xFF8B949E), size: 18),
-                          onPressed: () => setState(() => _isCustomLocation = false),
-                        ),
-                      ),
-                      validator: (v) {
-                        if (_isCustomLocation && (v == null || v.trim().isEmpty)) {
-                          return 'Please enter your location or college';
-                        }
-                        return null;
-                      },
+                Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF161B22),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFF30363D)),
+                  ),
+                  child: TextFormField(
+                    controller: _bioController,
+                    style: const TextStyle(color: Color(0xFFF0F6FC), fontSize: 14),
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.info_outline_rounded, color: Color(0xFF58A6FF), size: 18),
+                      hintText: 'e.g. Hey there! I am using EchoGram',
+                      hintStyle: TextStyle(color: Color(0xFF8B949E), fontSize: 13),
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                     ),
                   ),
+                ),
                 const SizedBox(height: 16),
 
                 // Password *

@@ -75,14 +75,14 @@ class CommunityDetailScreen extends StatelessWidget {
             ),
             const SizedBox(height: 6),
 
-            // Location Spot
+            // Category / Topic
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.location_on_outlined, size: 15, color: Color(0xFF8B949E)),
+                const Icon(Icons.tag_rounded, size: 15, color: Color(0xFF58A6FF)),
                 const SizedBox(width: 4),
                 Text(
-                  liveCommunity.locationSpot,
+                  liveCommunity.category,
                   style: const TextStyle(fontSize: 13.5, color: Color(0xFF8B949E)),
                 ),
               ],

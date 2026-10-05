@@ -42,7 +42,7 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
-    // Questions / Campus Q&A:
+    // Questions / Community Discussions:
     match /questions/{questionId} {
       allow read, write: if true;
     }

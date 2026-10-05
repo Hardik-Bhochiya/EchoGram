@@ -26,14 +26,14 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
   final List<String> _selectedTags = [];
 
   final List<String> _suggestedTags = [
-    'Academics',
-    'MidSem',
-    'Hostel',
-    'Food',
+    'General',
+    'Tech',
+    'DailyChat',
+    'Gaming',
     'Sports',
-    'Transport',
-    'Events',
-    'Placements',
+    'Music',
+    'Movies',
+    'Help',
   ];
 
   @override
@@ -73,9 +73,9 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
               : 'c1');
 
       final targetCommunity = communityProvider.getCommunityById(targetCommunityId);
-      final communityName = targetCommunity?.name ?? 'DDU Students';
-      final regionId = targetCommunity?.regionId ?? communityProvider.selectedRegion?.id ?? 'region-ddu';
-      final regionName = targetCommunity?.regionName ?? communityProvider.selectedRegion?.name ?? 'DDU, Nadiad, Gujarat';
+      final communityName = targetCommunity?.name ?? 'General Discussion';
+      final regionId = targetCommunity?.regionId ?? 'general';
+      final regionName = targetCommunity?.regionName ?? 'General';
 
       questionProvider.askQuestion(
         title: _titleController.text.trim(),
@@ -86,7 +86,7 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
         regionName: regionName,
         user: currentUser,
         isAnonymous: _isAnonymous,
-        tags: _selectedTags.isNotEmpty ? _selectedTags : ['DDU', 'General'],
+        tags: _selectedTags.isNotEmpty ? _selectedTags : ['General'],
       );
 
       Navigator.pop(context);

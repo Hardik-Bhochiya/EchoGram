@@ -94,11 +94,11 @@ class CommunityCard extends StatelessWidget {
               const SizedBox(height: 3),
               Row(
                 children: [
-                  const Icon(Icons.place_outlined, size: 12, color: Color(0xFF58A6FF)),
+                  const Icon(Icons.tag_rounded, size: 12, color: Color(0xFF58A6FF)),
                   const SizedBox(width: 3),
                   Expanded(
                     child: Text(
-                      community.locationSpot,
+                      community.category,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontSize: 11, color: Color(0xFF58A6FF), fontWeight: FontWeight.w600),
@@ -201,13 +201,12 @@ class CommunityCard extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 4),
-                        // Location Spot Forwarding Tag
                         Row(
                           children: [
-                            const Icon(Icons.place_rounded, size: 13, color: Color(0xFF58A6FF)),
+                            const Icon(Icons.tag_rounded, size: 13, color: Color(0xFF58A6FF)),
                             const SizedBox(width: 3),
                             Text(
-                              community.locationSpot,
+                              community.category,
                               style: const TextStyle(
                                 fontSize: 11.5,
                                 fontWeight: FontWeight.w600,

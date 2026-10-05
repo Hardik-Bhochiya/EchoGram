@@ -333,16 +333,16 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
                     CustomTextField(
                       controller: nameController,
                       labelText: '${isGroup ? 'Group' : 'Community'} Name',
-                      hintText: isGroup ? 'e.g. Pune Coders, Robotics Club' : 'e.g. DDU Students Community, Ahmedabad Tech',
+                      hintText: isGroup ? 'e.g. Flutter Developers, Gaming, Book Club' : 'e.g. Tech Enthusiasts, Daily Chat',
                     ),
                     const SizedBox(height: 12),
 
-                    // 3. Location (Direct Text box)
+                    // 3. Topic / Tag (Text box)
                     CustomTextField(
                       controller: locationController,
-                      labelText: 'Location',
-                      hintText: 'Enter location (e.g. DDU Nadiad, Ahmedabad, Library)',
-                      prefixIcon: Icons.location_on_outlined,
+                      labelText: 'Topic / Tag (Optional)',
+                      hintText: 'e.g. Coding, Friends, Gaming, Design',
+                      prefixIcon: Icons.tag_rounded,
                     ),
                     const SizedBox(height: 12),
 
@@ -416,7 +416,7 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
                             name: gName,
                             description: descController.text.trim().isNotEmpty
                                 ? descController.text.trim()
-                                : '$gName ${isGroup ? 'group' : 'community'} discussions and peer updates',
+                                : '$gName ${isGroup ? 'group' : 'community'} discussions and updates',
                             category: isGroup ? selectedCategory : 'Community',
                             iconEmoji: selectedEmoji,
                             bannerColorHex: 0xFF58A6FF,
@@ -437,7 +437,7 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
                           _tabController.animateTo(isGroup ? 0 : 1);
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text('Created ${isGroup ? 'group' : 'community'} "$gName" in $gLoc! 🎉'),
+                              content: Text('Created ${isGroup ? 'group' : 'community'} "$gName"! 🎉'),
                               backgroundColor: const Color(0xFF238636),
                             ),
                           );

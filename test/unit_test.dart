@@ -48,15 +48,15 @@ void main() {
       final initialCount = qProvider.questions.length;
 
       qProvider.askQuestion(
-        title: 'Where is the student recreation center in DDU?',
-        content: 'Need to know where the indoor badminton courts are.',
-        communityId: 'c-sports',
-        communityName: 'DDU Sports & Fitness',
-        regionId: 'region-nadiad',
-        regionName: 'Nadiad',
+        title: 'What are the best tips for daily messaging productivity?',
+        content: 'Looking for recommended habits to keep communication organized.',
+        communityId: 'c-general',
+        communityName: 'General Discussion',
+        regionId: 'general',
+        regionName: 'General',
         user: MockDataService.currentUser,
         isAnonymous: true,
-        tags: ['Sports', 'Nadiad'],
+        tags: ['Productivity', 'General'],
       );
 
       expect(qProvider.questions.length, initialCount + 1);
@@ -134,7 +134,7 @@ void main() {
 
       notifProvider.addNotification(
         title: 'Welcome',
-        message: 'Welcome to NearTalk!',
+        message: 'Welcome to EchoGram!',
         type: 'general',
       );
       expect(notifProvider.unreadCount, 1);

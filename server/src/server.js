@@ -44,7 +44,6 @@ app.get('/api/health', (req, res) => {
     service: 'EchoGram API & Socket.IO Server',
     version: '1.0.0',
     timestamp: new Date().toISOString(),
-    campus: 'DDU, Nadiad, Gujarat',
   });
 });
 
@@ -84,6 +83,5 @@ server.listen(PORT, () => {
   console.log(` EchoGram Backend Server Running!`);
   console.log(` REST API: http://localhost:${PORT}/api`);
   console.log(` Socket.IO: http://localhost:${PORT}/chat`);
-  console.log(` Campus Context: DDU, Nadiad, Gujarat`);
   console.log(`=========================================`);
 });

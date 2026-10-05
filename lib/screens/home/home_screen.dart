@@ -252,11 +252,17 @@ class HomeScreen extends StatelessWidget {
                             const SizedBox(height: 3),
                             Row(
                               children: [
-                                const Icon(Icons.location_on_outlined, size: 13, color: Color(0xFF58A6FF)),
-                                const SizedBox(width: 3),
-                                Text(
-                                  user?.campusOrCity.isNotEmpty == true ? user!.campusOrCity : 'Mumbai, India',
-                                  style: const TextStyle(fontSize: 12.5, color: Color(0xFF8B949E)),
+                                const Icon(Icons.chat_bubble_outline_rounded, size: 12, color: Color(0xFF58A6FF)),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    (user?.majorOrBio != null && user!.majorOrBio!.isNotEmpty)
+                                        ? user.majorOrBio!
+                                        : 'Online • Daily Chat',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 12, color: Color(0xFF8B949E)),
+                                  ),
                                 ),
                               ],
                             ),

@@ -1,309 +1,126 @@
-# EchoGram
+# EchoGram 💬
 
-> **Ask your community. Know your place.**
+> **Fast, modern, real-time messaging and chat application for daily communication.**
 
-EchoGram is a location-based social communication platform built with Flutter and Dart. It is designed to help people connect with others who live, study, or have experience in a particular region.
+EchoGram is a feature-rich, cross-platform chat and messaging application built with **Flutter**, **Node.js**, **Express**, **Socket.IO**, **Firebase**, and **MongoDB**. Designed for seamless daily communication, EchoGram enables friends, teams, and communities to connect instantly via one-on-one direct messages and group conversations.
 
-The platform focuses on helping newcomers, especially college students and people moving to a new city, get useful local information by asking questions and communicating with members of their region-specific communities.
+---
 
-## 📌 Problem Statement
+## ✨ Features
 
-When students join a new college or people move to a new city, they often do not know about the local culture, rules, food, sports facilities, important places, communities, or everyday practices.
+### 💬 1-on-1 Direct Messaging
+- **Instant Messaging**: Real-time communication powered by WebSockets via Socket.IO.
+- **Message Status**: Live sent, delivered, and read receipt indicators.
+- **Rich Message Actions**: Edit sent messages, delete for everyone, and react with likes and dislikes.
+- **Chat Persistence**: Full offline capability and real-time Cloud Firestore synchronization.
+- **Unread Counters**: Live badges for unread conversations.
 
-Finding reliable information can require asking multiple people or searching through unrelated platforms.
+### 👥 Groups & Communities
+- **Group Chats**: Create and join topic-based group chats (Tech, Sports, Gaming, Friends, Hobbies, etc.).
+- **Group Rules & Management**: Customizable group rules, member lists, and creator moderation tools.
+- **Community Channels**: Discover shared public interest communities and connect with like-minded people.
 
-EchoGram aims to provide a dedicated platform where users can:
+### 🔍 User Discovery & Contacts
+- **Unique Usernames**: Connect using `@username` handles.
+- **Instant Search**: Search people by handle or display name.
+- **Friend Requests**: Send, accept, or decline friend requests with live pending request alerts.
+- **Contact Management**: Keep a personal contacts list for quick messaging.
 
-- Join communities based on their college, city, locality, or region.
-- Ask questions related to that specific community.
-- Get answers from people who live or have experience there.
-- Post questions anonymously or reveal their identity.
-- Communicate with community members in real time.
+### 👤 Profile & Personalization
+- **Custom Profiles**: Display name, username handle, customizable bio/status, and avatar selections.
+- **Verified Badges**: Distinct verified badges for trusted users.
+- **Dark Theme**: Premium GitHub Dark aesthetic with high contrast and smooth micro-interactions.
 
-## 🎯 Objectives
+### 🔔 Real-Time Notifications
+- Live push/in-app notifications for incoming messages, friend requests, and group activities.
 
-- Build a region-based social communication platform.
-- Help newcomers understand their new college, city, or locality.
-- Provide community-specific discussions and information.
-- Support anonymous and public questions.
-- Enable real-time communication between users.
-- Create a growing knowledge base for different communities.
+---
 
-## ✨ Planned Features
-
-### 🔐 Authentication
-- User registration and login
-- Secure authentication
-- User profile management
-- Future support for social/college authentication
-
-### 📍 Region-Based Communities
-- Discover communities based on location
-- College and campus communities
-- City and locality communities
-- Join and leave communities
-
-### ❓ Community Questions
-- Ask questions within a specific community
-- Public or anonymous posting
-- Reply to questions
-- Like/helpful responses
-- Community discussions
-
-### 💬 Real-Time Communication
-- One-to-one messaging
-- Community/group chat
-- Real-time messages using Socket.IO
-- Online/offline status
-- Typing indicators
-
-### 🔔 Notifications
-- New replies
-- New messages
-- Community activity
-- Other important updates
-
-### 👤 User Profiles
-- User profile
-- Profile picture
-- Joined communities
-- Community contribution/reputation
-
-### 📸 Media Sharing
-- Image sharing
-- Media attachments in conversations
-
-## 🏗️ Application Architecture
+## 🏗️ Architecture
 
 ```text
-                    NearTalk
-                       │
-          ┌────────────┴────────────┐
-          │                         │
-     Flutter App               Backend Server
-          │                         │
-     Flutter + Dart          Node.js + Express
-          │                         │
-          │                  ┌──────┴──────┐
-          │                  │             │
-          │               REST API      Socket.IO
-          │                  │             │
-          └──────────────────┴─────────────┘
-                             │
-                         MongoDB
-REST API
+                           EchoGram Client
+                     (Flutter Web / Android / iOS)
+                                │
+          ┌─────────────────────┴─────────────────────┐
+          │                                           │
+          ▼                                           ▼
+   Firebase Firestore                           Node.js Backend
+   (User profiles, messages,                    (REST API & Socket.IO)
+    friendships, real-time sync)                      │
+                                                      ▼
+                                                   MongoDB
+                                              (Data Persistence)
+```
 
-REST APIs will be used for operations such as:
+---
 
-Authentication
-User profiles
-Community management
-Joining communities
-Creating questions
-Fetching questions
-Managing user data
-Socket.IO
+## 🚀 Getting Started
 
-Socket.IO will be used for real-time functionality such as:
+### Prerequisites
+- **Flutter SDK**: `>=3.6.0`
+- **Node.js**: `>=18.0.0`
+- **npm**: `>=9.0.0`
+- **MongoDB** (optional; in-memory store automatically activates if local MongoDB is not running)
 
-Real-time messaging
-Group chat
-Typing indicators
-Online status
-Real-time replies
-Chat notifications
-🛠️ Technology Stack
-Frontend
-Flutter
-Dart
-Material Design / Material 3
-Android Studio
-Backend
-Node.js
-Express.js
-Socket.IO
-Database
-MongoDB
-APIs & Communication
-REST API
-WebSocket / Socket.IO
-Development Tools
-Android Studio
-Git
-GitHub
-Postman
-MongoDB Compass
-📱 Initial Flutter Screens
+### 1. Backend Server Setup
 
-The initial application will include:
+```bash
+cd server
+npm install
+npm run dev
+```
 
-Splash Screen
-     ↓
-Authentication
-     ├── Login
-     └── Sign Up
-     ↓
-Home
-     ├── Current Region
-     ├── My Communities
-     ├── Nearby Communities
-     └── Ask a Question
-     ↓
-Community
-     ├── Questions
-     ├── Discussions
-     └── Community Chat
-     ↓
-Chat
-     ├── One-to-One Chat
-     └── Group Chat
-     ↓
-Profile
-📂 Planned Project Structure
-neartalk/
-│
-├── android/
-├── ios/
-├── lib/
-│   │
-│   ├── main.dart
-│   │
-│   ├── models/
-│   │
-│   ├── screens/
-│   │   ├── auth/
-│   │   ├── home/
-│   │   ├── community/
-│   │   ├── chat/
-│   │   └── profile/
-│   │
-│   ├── widgets/
-│   │
-│   ├── services/
-│   │   ├── api_service.dart
-│   │   ├── socket_service.dart
-│   │   └── auth_service.dart
-│   │
-│   ├── providers/
-│   │
-│   ├── utils/
-│   │
-│   └── theme/
-│
-├── assets/
-│   ├── images/
-│   └── icons/
-│
-├── test/
-│
-├── pubspec.yaml
-└── README.md
-## 🚀 Development Roadmap
+The server starts at `http://localhost:5000` with:
+- **REST API**: `http://localhost:5000/api`
+- **Socket.IO**: `http://localhost:5000/chat`
+- **Health Check**: `http://localhost:5000/api/health`
 
-### Phase 1 — Flutter UI
-- [x] Project setup & Material 3 architecture
-- [x] Theme and reusable components (Cards, Badges, Chips, Vote Buttons)
-- [x] Authentication UI (Login, Sign-Up, Guest exploration)
-- [x] Home screen & Region Switcher
-- [x] Community discovery & Detail screen
-- [x] Question & Discussion screen (with Anonymous posting support)
-- [x] Real-time Chat UI & simulated interactions
-- [x] Profile UI with reputation badges & Dark/Light theme switch
-Phase 2 — Backend
- Node.js setup
- Express.js API
- MongoDB integration
- User authentication API
- Community APIs
- Question and reply APIs
- Profile APIs
-Phase 3 — Real-Time Communication
- Socket.IO integration
- One-to-one messaging
- Group chat
- Online/offline status
- Typing indicator
- Real-time notifications
-Phase 4 — Location & Community
- Location detection
- Region-based community discovery
- College communities
- City/locality communities
- Community joining system
-Phase 5 — Advanced Features
- Anonymous questions
- Community reputation
- Media sharing
- Community moderation
- Events
- Map integration
- Voice messages
- Video calling
-🔒 Privacy & Safety
+### 2. Flutter Client Setup
 
-NearTalk will aim to provide a safe community environment through:
+```bash
+# In the project root directory
+flutter pub get
 
-Authenticated user accounts
-Anonymous question posting
-Community moderation
-Report functionality
-Blocking users
-Appropriate access controls
+# Run on Chrome
+flutter run -d chrome --web-port 5050
 
-Anonymous posting will hide the user's identity from other community members while maintaining an authenticated account internally for platform security and moderation.
+# Run on Edge (for dual-user testing)
+flutter run -d edge --web-port 5051
 
-🌱 Future Vision
+# Run on Android
+flutter run -d android
+```
 
-NearTalk aims to become a community-driven platform where every college, city, locality, and region can develop its own knowledge base.
+---
 
-A newcomer should be able to join a community and quickly discover:
+## 🧪 Testing
 
-📚 Academic information
-🍴 Food and canteens
-🏠 Accommodation and hostels
-⚽ Sports facilities
-🎉 Events and culture
-📍 Important local places
-💡 Tips from experienced members
-📊 Project Status
+Run the automated test suite:
 
-🚧 Under Development
+```bash
+# Run unit & widget tests
+flutter test
 
-The project is currently in the initial Flutter UI and architecture phase.
+# Run static analysis
+flutter analyze
+```
 
-👨‍💻 Development
+---
 
-Built with ❤️ using Flutter, Dart, Node.js, Express.js, Socket.IO, and MongoDB.
+## 📱 Technology Stack
 
-NearTalk — Ask your community. Know your place.
+| Layer | Technologies |
+|---|---|
+| **Frontend Framework** | Flutter (Dart 3.6+) |
+| **State Management** | Provider |
+| **Styling & Design** | Custom Design System (GitHub Dark Theme, Glassmorphism) |
+| **Backend Server** | Node.js, Express.js |
+| **Real-Time Engine** | Socket.IO |
+| **Databases** | Cloud Firestore, MongoDB, SharedPreferences (Local Cache) |
+| **Authentication** | Firebase Auth + JWT Token Fallback |
 
+---
 
-### One change I'd strongly recommend
-
-For your actual implementation, don't add every dependency immediately. Start with the Flutter side and add packages as you need them.
-
-Your likely Flutter dependencies later will include:
-
-- `http` → REST API communication
-- `socket_io_client` → real-time Socket.IO communication
-- `provider` or `riverpod` → state management
-- `shared_preferences` → local session/preferences
-- `geolocator` → device location
-- `permission_handler` → location permissions
-- `image_picker` → profile/media images
-- `cached_network_image` → efficient network images
-
-For the backend:
-
-- `express`
-- `mongoose`
-- `socket.io`
-- `jsonwebtoken`
-- `bcryptjs`
-- `cors`
-- `dotenv`
-- `multer` (when you implement media uploads)
-
-**Don't install all of these now.** For the Lab 5 UI, you can start with essentially Flutter/Dart + the standard Material widgets. Then we'll add packages as each feature is implemented.
-
-Also, the README's **Phase 1 checkboxes should be updated as you actually build each feature**—that m
+## 📄 License
+This project is open source and available under the [MIT License](LICENSE).

@@ -84,7 +84,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                             ),
                             const SizedBox(height: 6),
                             const Text(
-                              'Search and connect with campus peers first!',
+                              'Search and connect with friends to start chatting!',
                               style: TextStyle(color: Color(0xFF8B949E), fontSize: 13),
                             ),
                             const SizedBox(height: 16),

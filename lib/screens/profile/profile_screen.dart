@@ -209,8 +209,8 @@ class ProfileScreen extends StatelessWidget {
                       controller: locationCtrl,
                       style: const TextStyle(color: Color(0xFFF0F6FC)),
                       decoration: InputDecoration(
-                        labelText: 'College / Location',
-                        hintText: 'e.g. DDU, Nadiad or Mumbai',
+                        labelText: 'City / Location (Optional)',
+                        hintText: 'e.g. Mumbai, New York, etc.',
                         hintStyle: const TextStyle(color: Color(0xFF8B949E), fontSize: 13),
                         labelStyle: const TextStyle(color: Color(0xFF8B949E)),
                         filled: true,
@@ -397,18 +397,21 @@ class ProfileScreen extends StatelessWidget {
               user.handle,
               style: const TextStyle(fontSize: 14, color: Color(0xFF58A6FF), fontWeight: FontWeight.w600),
             ),
-            // 4. College / Location
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.location_on_outlined, size: 15, color: Color(0xFF58A6FF)),
-                const SizedBox(width: 5),
-                Text(
-                  user.campusOrCity.isNotEmpty ? user.campusOrCity : 'DDU, Nadiad',
-                  style: const TextStyle(fontSize: 13.5, color: Color(0xFF8B949E), fontWeight: FontWeight.w500),
-                ),
-              ],
-            ),
+            // 4. City / Location (if provided)
+            if (user.campusOrCity.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.location_on_outlined, size: 14, color: Color(0xFF58A6FF)),
+                  const SizedBox(width: 4),
+                  Text(
+                    user.campusOrCity,
+                    style: const TextStyle(fontSize: 13, color: Color(0xFF8B949E), fontWeight: FontWeight.w500),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 14),
 
             // 5. Bio

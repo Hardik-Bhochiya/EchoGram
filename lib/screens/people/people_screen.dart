@@ -83,7 +83,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
         elevation: 0,
         shape: const Border(bottom: BorderSide(color: Color(0xFF30363D))),
         title: const Text(
-          'People & Campus Peers',
+          'People & Contacts',
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFFF0F6FC)),
         ),
         actions: [
@@ -124,7 +124,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
                       controller: _searchController,
                       style: const TextStyle(color: Color(0xFFF0F6FC), fontSize: 14),
                       decoration: const InputDecoration(
-                        hintText: 'Search @username or classmate name...',
+                        hintText: 'Search @username or name...',
                         hintStyle: TextStyle(color: Color(0xFF8B949E), fontSize: 13),
                         border: InputBorder.none,
                       ),
@@ -238,12 +238,12 @@ class _PeopleScreenState extends State<PeopleScreen> {
             const Icon(Icons.people_outline_rounded, size: 48, color: Color(0xFF30363D)),
             const SizedBox(height: 12),
             const Text(
-              'Discover Classmates & Peers',
+              'Discover People',
               style: TextStyle(color: Color(0xFFF0F6FC), fontWeight: FontWeight.bold, fontSize: 15),
             ),
             const SizedBox(height: 6),
             const Text(
-              'Search by @username above to connect with fellow students!',
+              'Search by @username above to connect with friends!',
               style: TextStyle(color: Color(0xFF8B949E), fontSize: 13),
               textAlign: TextAlign.center,
             ),
@@ -258,7 +258,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           child: Text(
-            'SUGGESTED CAMPUS PEERS',
+            'SUGGESTED CONTACTS',
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.bold,
@@ -333,7 +333,9 @@ class _PeopleScreenState extends State<PeopleScreen> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    user.campusOrCity,
+                    (user.majorOrBio != null && user.majorOrBio!.isNotEmpty)
+                        ? user.majorOrBio!
+                        : (user.campusOrCity.isNotEmpty ? user.campusOrCity : 'EchoGram User'),
                     style: const TextStyle(fontSize: 12, color: Color(0xFF8B949E)),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

@@ -298,12 +298,12 @@ class CommunityProvider extends ChangeNotifier {
     required int bannerColorHex,
     String? regionId,
     String? regionName,
-    String locationSpot = 'City / Campus Spot',
+    String locationSpot = 'General',
     String creatorId = 'user-hardik',
     bool isGroupType = true,
     List<String>? rules,
   }) {
-    final effectiveRegionName = regionName ?? _selectedRegion?.name ?? 'DDU, Nadiad, Gujarat';
+    final effectiveRegionName = regionName ?? _selectedRegion?.name ?? 'General';
     final effectiveRegionId = regionId ?? 'region_${effectiveRegionName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '')}';
     final cleanCreator = creatorId.toLowerCase().replaceAll('@', '');
 
