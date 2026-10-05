@@ -5,6 +5,7 @@ class CommunityCard extends StatelessWidget {
   final Community community;
   final VoidCallback onTap;
   final VoidCallback onJoinToggle;
+  final VoidCallback? onChatTap;
   final VoidCallback? onDelete;
   final bool isHorizontal;
 
@@ -13,6 +14,7 @@ class CommunityCard extends StatelessWidget {
     required this.community,
     required this.onTap,
     required this.onJoinToggle,
+    this.onChatTap,
     this.onDelete,
     this.isHorizontal = false,
   });
@@ -237,18 +239,11 @@ class CommunityCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.people_alt_outlined, size: 15, color: Color(0xFF8B949E)),
-                      const SizedBox(width: 4),
+                      const Icon(Icons.people_alt_rounded, size: 15, color: Color(0xFF238636)),
+                      const SizedBox(width: 5),
                       Text(
-                        '${community.memberCount} members',
-                        style: const TextStyle(fontSize: 12, color: Color(0xFF8B949E)),
-                      ),
-                      const SizedBox(width: 12),
-                      const Icon(Icons.forum_outlined, size: 15, color: Color(0xFF8B949E)),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${community.questionCount} posts',
-                        style: const TextStyle(fontSize: 12, color: Color(0xFF8B949E)),
+                        '${community.memberCount} ${community.memberCount == 1 ? 'member joined' : 'members joined'}',
+                        style: const TextStyle(fontSize: 12, color: Color(0xFF8B949E), fontWeight: FontWeight.w600),
                       ),
                     ],
                   ),
@@ -256,47 +251,97 @@ class CommunityCard extends StatelessWidget {
                     children: [
                       if (onDelete != null)
                         IconButton(
-                          icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFDA3633), size: 20),
-                          tooltip: 'Delete Community (Creator)',
+                          icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFDA3633), size: 19),
+                          tooltip: 'Delete Group (Creator)',
                           onPressed: onDelete,
                         ),
+                      // Simple Chat Button
                       InkWell(
-                        onTap: onJoinToggle,
-                        borderRadius: BorderRadius.circular(20),
+                        onTap: onChatTap ?? onTap,
+                        borderRadius: BorderRadius.circular(18),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5.5),
                           decoration: BoxDecoration(
-                            color: community.isJoined
-                                ? const Color(0xFF21262D)
-                                : const Color(0xFF238636),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: community.isJoined
-                                  ? const Color(0xFF30363D)
-                                  : const Color(0x33FFFFFF),
-                            ),
+                            color: const Color(0xFF21262D),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: const Color(0xFF58A6FF)),
                           ),
-                          child: Row(
+                          child: const Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(
-                                community.isJoined ? Icons.check : Icons.add,
-                                size: 14,
-                                color: Colors.white,
-                              ),
-                              const SizedBox(width: 4),
+                              Icon(Icons.chat_bubble_outline_rounded, size: 13, color: Color(0xFF58A6FF)),
+                              SizedBox(width: 4),
                               Text(
-                                community.isJoined ? 'Joined' : 'Join',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
+                                'Chat',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF58A6FF),
                                 ),
                               ),
                             ],
                           ),
                         ),
                       ),
+                      const SizedBox(width: 8),
+
+                      // Join / Leave Button
+                      if (community.isJoined)
+                        InkWell(
+                          onTap: onJoinToggle,
+                          borderRadius: BorderRadius.circular(18),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5.5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF21262D),
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(color: const Color(0xFFF85149)),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.exit_to_app_rounded, size: 13, color: Color(0xFFF85149)),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Leave',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFFF85149),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      else
+                        InkWell(
+                          onTap: onJoinToggle,
+                          borderRadius: BorderRadius.circular(18),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5.5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF238636),
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(color: const Color(0x33FFFFFF)),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.add, size: 13, color: Colors.white),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Join',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ],

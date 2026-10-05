@@ -14,6 +14,7 @@ class Community {
   final bool isJoined;
   final List<String> rules;
   final List<String> members;
+  final bool isGroupType;
 
   const Community({
     required this.id,
@@ -29,6 +30,7 @@ class Community {
     required this.iconEmoji,
     required this.bannerColorHex,
     this.isJoined = false,
+    this.isGroupType = true,
     this.rules = const [
       'Respect & Civility: Treat all members with dignity. No harassment, abusive words, or bullying.',
       'Authentic Local Info: Keep questions and discussions genuine and relevant to this community.',
@@ -53,6 +55,7 @@ class Community {
     String? iconEmoji,
     int? bannerColorHex,
     bool? isJoined,
+    bool? isGroupType,
     List<String>? rules,
     List<String>? members,
   }) {
@@ -70,6 +73,7 @@ class Community {
       iconEmoji: iconEmoji ?? this.iconEmoji,
       bannerColorHex: bannerColorHex ?? this.bannerColorHex,
       isJoined: isJoined ?? this.isJoined,
+      isGroupType: isGroupType ?? this.isGroupType,
       rules: rules ?? this.rules,
       members: members ?? this.members,
     );
@@ -90,12 +94,28 @@ class Community {
       'iconEmoji': iconEmoji,
       'bannerColorHex': bannerColorHex,
       'isJoined': isJoined,
+      'isGroupType': isGroupType,
+      'isGroup': isGroupType,
       'rules': rules,
       'members': members,
     };
   }
 
   factory Community.fromJson(Map<String, dynamic> json) {
+    final rawMembers = List<String>.from(json['members'] ?? []);
+    final distinctMembers = rawMembers
+        .map((m) => m.toString().toLowerCase().replaceAll('@', '').trim())
+        .where((m) => m.isNotEmpty)
+        .toSet();
+    final rawCount = json['memberCount'] as int? ?? 0;
+    final effMemberCount = distinctMembers.isNotEmpty
+        ? distinctMembers.length
+        : (rawCount >= 0 ? rawCount : 1);
+
+    final rawIsGroup = json['isGroupType'] as bool? ??
+        json['isGroup'] as bool? ??
+        (json['category'] == null || !json['category'].toString().toLowerCase().contains('community'));
+
     return Community(
       id: json['id'] as String,
       name: json['name'] as String,
@@ -105,13 +125,14 @@ class Community {
       locationSpot: json['locationSpot'] as String? ?? 'DDU Campus',
       creatorId: json['creatorId'] as String? ?? '',
       category: json['category'] as String? ?? 'Campus',
-      memberCount: json['memberCount'] as int? ?? 0,
+      memberCount: effMemberCount,
       questionCount: json['questionCount'] as int? ?? 0,
       iconEmoji: json['iconEmoji'] as String? ?? '🏛️',
       bannerColorHex: json['bannerColorHex'] as int? ?? 0xFF4F46E5,
       isJoined: json['isJoined'] as bool? ?? false,
+      isGroupType: rawIsGroup,
       rules: List<String>.from(json['rules'] ?? []),
-      members: List<String>.from(json['members'] ?? []),
+      members: rawMembers,
     );
   }
 }

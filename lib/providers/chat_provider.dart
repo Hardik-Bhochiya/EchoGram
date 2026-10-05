@@ -15,6 +15,7 @@ class ChatProvider extends ChangeNotifier {
   final Map<String, List<ChatMessage>> _messages = {};
   final Map<String, String?> _typingUser = {};
   final Map<String, StreamSubscription> _roomFirestoreSubs = {};
+  final Set<String> _loadingRooms = {};
   StreamSubscription<ChatMessage>? _messageSub;
   StreamSubscription<Map<String, dynamic>>? _typingSub;
   StreamSubscription<Map<String, dynamic>>? _editSub;
@@ -31,9 +32,27 @@ class ChatProvider extends ChangeNotifier {
     _initChat();
   }
 
+  int get totalUnread => _rooms.fold<int>(0, (acc, r) => acc + r.unreadCount);
+
   void _initChat() {
-    // 1. Immediately load rooms from local storage
-    _rooms = LocalStoreService().getChatRooms();
+    // 1. Immediately load rooms from local storage (purge dummy rooms)
+    _rooms = LocalStoreService().getChatRooms().where((r) {
+      final t = r.title.toLowerCase();
+      final s = r.subtitle?.toLowerCase() ?? '';
+      final id = r.id.toLowerCase();
+      if (t.contains('rahul') ||
+          t.contains('canteen') ||
+          t.contains('mumbai developer') ||
+          t.contains('hostel group') ||
+          t.contains('official chat') ||
+          t.contains('robotics') ||
+          s.contains('rahul') ||
+          id.startsWith('room-c') ||
+          id.contains('rahul')) {
+        return false;
+      }
+      return true;
+    }).toList();
     notifyListeners();
 
     // 2. Connect to WebSocket if online
@@ -64,17 +83,22 @@ class ChatProvider extends ChangeNotifier {
 
       final index = _rooms.indexWhere((r) => r.id == msg.roomId);
       if (index != -1) {
-        _rooms[index] = _rooms[index].copyWith(
+        final currentRoom = _rooms.removeAt(index);
+        final updated = currentRoom.copyWith(
           lastMessage: msg.content,
           lastMessageTime: msg.timestamp,
-          unreadCount: _rooms[index].unreadCount + (msg.isMine ? 0 : 1),
+          unreadCount: currentRoom.unreadCount + (msg.isMine ? 0 : 1),
         );
-        LocalStoreService().addOrUpdateRoom(_rooms[index]);
+        _rooms.insert(0, updated);
+        LocalStoreService().addOrUpdateRoom(updated);
       } else {
         // Auto-create direct conversation room if recipient hasn't opened it yet
+        final displayHandle = msg.senderName.startsWith('@')
+            ? msg.senderName
+            : '@${msg.senderName.toLowerCase().replaceAll(' ', '')}';
         final newRoom = ChatRoom(
           id: msg.roomId,
-          title: msg.senderName,
+          title: displayHandle,
           subtitle: 'Direct Message',
           avatarEmoji: '👤',
           isGroup: false,
@@ -236,9 +260,27 @@ class ChatProvider extends ChangeNotifier {
   Future<void> _loadRoomsFromApi() async {
     try {
       final remoteRooms = await ApiService().getChatRooms();
-      if (remoteRooms.isNotEmpty) {
-        _rooms = remoteRooms;
-        for (final r in remoteRooms) {
+      final cleanRooms = remoteRooms.where((r) {
+        final t = r.title.toLowerCase();
+        final s = r.subtitle?.toLowerCase() ?? '';
+        final id = r.id.toLowerCase();
+        if (t.contains('rahul') ||
+            t.contains('canteen') ||
+            t.contains('mumbai developer') ||
+            t.contains('hostel group') ||
+            t.contains('official chat') ||
+            t.contains('robotics') ||
+            s.contains('rahul') ||
+            id.startsWith('room-c') ||
+            id.contains('rahul')) {
+          return false;
+        }
+        return true;
+      }).toList();
+
+      if (cleanRooms.isNotEmpty) {
+        _rooms = cleanRooms;
+        for (final r in cleanRooms) {
           LocalStoreService().addOrUpdateRoom(r);
         }
         notifyListeners();
@@ -281,34 +323,73 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
+  ChatMessage? getLastMessage(String roomId) {
+    final cached = _messages[roomId];
+    if (cached != null && cached.isNotEmpty) {
+      return cached.last;
+    }
+    final localMsgs = LocalStoreService().getMessages(roomId);
+    if (localMsgs.isNotEmpty) {
+      _messages[roomId] = List<ChatMessage>.from(localMsgs);
+      return localMsgs.last;
+    }
+    return null;
+  }
+
   List<ChatMessage> getMessages(String roomId, {String? currentUserId}) {
     if (!_messages.containsKey(roomId)) {
       final localMsgs = LocalStoreService().getMessages(roomId);
-      if (localMsgs.isNotEmpty) {
-        _messages[roomId] = localMsgs;
-      } else {
-        _messages[roomId] = [];
-      }
+      _messages[roomId] = List<ChatMessage>.from(localMsgs);
 
-      if (ApiService().isServerReachable) {
+      if (ApiService().isServerReachable && !_loadingRooms.contains(roomId)) {
+        _loadingRooms.add(roomId);
         ApiService().getMessages(roomId).then((msgs) {
           if (msgs.isNotEmpty) {
-            _messages[roomId] = msgs;
+            bool hasNew = false;
             for (final m in msgs) {
+              final existingIdx = _messages[roomId]!.indexWhere((item) =>
+                  item.id == m.id ||
+                  (item.senderId == m.senderId &&
+                      item.content.trim() == m.content.trim() &&
+                      item.timestamp.difference(m.timestamp).abs().inSeconds < 5));
+              if (existingIdx != -1) {
+                _messages[roomId]![existingIdx] = m;
+              } else {
+                _messages[roomId]!.add(m);
+                hasNew = true;
+              }
               LocalStoreService().addMessage(m);
             }
-            notifyListeners();
+            if (hasNew) {
+              _messages[roomId]!.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+              notifyListeners();
+            }
           }
+        }).catchError((_) {}).whenComplete(() {
+          _loadingRooms.remove(roomId);
         });
       }
     }
 
-    final list = _messages[roomId] ?? [];
-    if (currentUserId != null) {
-      // Correct isMine flag relative to the active logged-in user
-      return list.map((m) => m.copyWith(isMine: m.senderId == currentUserId)).toList();
+    final raw = _messages[roomId] ?? [];
+    // Deduplicate in memory
+    final List<ChatMessage> deduplicated = [];
+    for (final m in raw) {
+      final sContent = m.content.trim();
+      final hasDup = deduplicated.any((u) =>
+          u.id == m.id ||
+          (u.senderId == m.senderId &&
+              u.content.trim() == sContent &&
+              u.timestamp.difference(m.timestamp).abs().inSeconds < 5));
+      if (!hasDup) {
+        deduplicated.add(m);
+      }
     }
-    return list;
+
+    if (currentUserId != null) {
+      return deduplicated.map((m) => m.copyWith(isMine: m.senderId == currentUserId)).toList();
+    }
+    return deduplicated;
   }
 
   void joinRoom(String roomId, String userName) {
@@ -331,7 +412,11 @@ class ChatProvider extends ChangeNotifier {
               ...doc.data(),
               'id': doc.id,
             });
-            final existingIdx = _messages[roomId]!.indexWhere((m) => m.id == msg.id);
+            final existingIdx = _messages[roomId]!.indexWhere((m) =>
+                m.id == msg.id ||
+                (m.senderId == msg.senderId &&
+                    m.content.trim() == msg.content.trim() &&
+                    m.timestamp.difference(msg.timestamp).abs().inSeconds < 5));
             if (existingIdx != -1) {
               _messages[roomId]![existingIdx] = msg;
             } else {
@@ -375,28 +460,29 @@ class ChatProvider extends ChangeNotifier {
   ChatRoom startPersonalChat({required User peerUser, required User currentUser}) {
     final directRoomId = getDirectRoomId(currentUser.username, peerUser.username);
 
-    final existing = _rooms.firstWhere(
-      (r) => r.id == directRoomId,
-      orElse: () {
-        final newRoom = ChatRoom(
-          id: directRoomId,
-          title: peerUser.name,
-          subtitle: peerUser.handle,
-          avatarEmoji: '👤',
-          isGroup: false,
-          lastMessage: 'Started personal chat with ${peerUser.handle}',
-          lastMessageTime: DateTime.now(),
-          unreadCount: 0,
-          isOnline: true,
-          participantIds: [currentUser.id, peerUser.id],
-        );
-        _rooms.insert(0, newRoom);
-        LocalStoreService().addOrUpdateRoom(newRoom);
-        return newRoom;
-      },
+    final existingIdx = _rooms.indexWhere((r) => r.id == directRoomId);
+    if (existingIdx != -1) {
+      _listenToRoomFirestore(directRoomId);
+      return _rooms[existingIdx];
+    }
+
+    final newRoom = ChatRoom(
+      id: directRoomId,
+      title: peerUser.handle,
+      subtitle: peerUser.name,
+      avatarEmoji: '👤',
+      isGroup: false,
+      lastMessage: 'Started personal chat with ${peerUser.handle}',
+      lastMessageTime: DateTime.now(),
+      unreadCount: 0,
+      isOnline: true,
+      participantIds: [currentUser.id, peerUser.id],
     );
+    _rooms.insert(0, newRoom);
+    LocalStoreService().addOrUpdateRoom(newRoom);
+    _listenToRoomFirestore(directRoomId);
     notifyListeners();
-    return existing;
+    return newRoom;
   }
 
   void editMessage(String roomId, String messageId, String newContent) {
@@ -489,6 +575,17 @@ class ChatProvider extends ChangeNotifier {
         list[idx] = current.copyWith(likes: newLikes, dislikes: newDislikes);
         LocalStoreService().toggleLikeMessage(roomId, messageId, userId);
         SocketService().likeMessage(roomId, messageId, userId);
+
+        // Online Cloud Firestore sync
+        if (Firebase.apps.isNotEmpty) {
+          try {
+            FirebaseFirestore.instance.collection('messages').doc(messageId).update({
+              'likes': newLikes,
+              'dislikes': newDislikes,
+            });
+          } catch (_) {}
+        }
+
         notifyListeners();
       }
     }
@@ -513,6 +610,17 @@ class ChatProvider extends ChangeNotifier {
         list[idx] = current.copyWith(likes: newLikes, dislikes: newDislikes);
         LocalStoreService().toggleDislikeMessage(roomId, messageId, userId);
         SocketService().dislikeMessage(roomId, messageId, userId);
+
+        // Online Cloud Firestore sync
+        if (Firebase.apps.isNotEmpty) {
+          try {
+            FirebaseFirestore.instance.collection('messages').doc(messageId).update({
+              'likes': newLikes,
+              'dislikes': newDislikes,
+            });
+          } catch (_) {}
+        }
+
         notifyListeners();
       }
     }
@@ -534,7 +642,7 @@ class ChatProvider extends ChangeNotifier {
       timestamp: DateTime.now(),
       isMine: true,
       isAnonymous: isAnonymous,
-      status: 'seen', // Seen indicator
+      status: 'sent', // 1. Initial WhatsApp status: Single grey tick
       likes: [],
       dislikes: [],
       isEdited: false,
@@ -545,15 +653,18 @@ class ChatProvider extends ChangeNotifier {
       _messages[roomId] = [];
     }
     _messages[roomId]!.add(newMsg);
+    _messages[roomId]!.sort((a, b) => a.timestamp.compareTo(b.timestamp));
     LocalStoreService().addMessage(newMsg);
 
     final index = _rooms.indexWhere((r) => r.id == roomId);
     if (index != -1) {
-      _rooms[index] = _rooms[index].copyWith(
+      final currentRoom = _rooms.removeAt(index);
+      final updated = currentRoom.copyWith(
         lastMessage: content,
         lastMessageTime: DateTime.now(),
       );
-      LocalStoreService().addOrUpdateRoom(_rooms[index]);
+      _rooms.insert(0, updated);
+      LocalStoreService().addOrUpdateRoom(updated);
     }
     notifyListeners();
 
@@ -579,6 +690,33 @@ class ChatProvider extends ChangeNotifier {
       isAnonymous: isAnonymous,
       timestamp: newMsg.timestamp.toIso8601String(),
     );
+
+    // Realistic WhatsApp tick progression:
+    // After 600ms: transition to 'delivered' (double grey tick)
+    Timer(const Duration(milliseconds: 600), () {
+      final list = _messages[roomId];
+      if (list != null) {
+        final mIdx = list.indexWhere((m) => m.id == newMsg.id);
+        if (mIdx != -1 && list[mIdx].status == 'sent') {
+          list[mIdx] = list[mIdx].copyWith(status: 'delivered');
+          LocalStoreService().addMessage(list[mIdx]);
+          notifyListeners();
+        }
+      }
+    });
+
+    // After 1800ms: transition to 'seen' (double blue tick)
+    Timer(const Duration(milliseconds: 1800), () {
+      final list = _messages[roomId];
+      if (list != null) {
+        final mIdx = list.indexWhere((m) => m.id == newMsg.id);
+        if (mIdx != -1 && list[mIdx].status != 'seen') {
+          list[mIdx] = list[mIdx].copyWith(status: 'seen');
+          LocalStoreService().addMessage(list[mIdx]);
+          notifyListeners();
+        }
+      }
+    });
 
     // If in standalone offline mobile mode, trigger interactive realistic peer reply
     if (!SocketService.disabledForTests && !SocketService().isConnected) {

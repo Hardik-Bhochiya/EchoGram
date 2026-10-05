@@ -288,7 +288,12 @@ class AuthService {
     if (majorOrBio != null) updates['majorOrBio'] = majorOrBio.trim();
     if (avatarUrl != null) updates['avatarUrl'] = avatarUrl;
 
-    await _firestore!.collection('users').doc(uid).update(updates);
+    try {
+      await _firestore!.collection('users').doc(uid).set(updates, SetOptions(merge: true));
+      if (name != null && _auth?.currentUser != null) {
+        await _auth!.currentUser!.updateDisplayName(name.trim());
+      }
+    } catch (_) {}
   }
 
   /// Sign out

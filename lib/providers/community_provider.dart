@@ -19,8 +19,6 @@ class CommunityProvider extends ChangeNotifier {
   String? _activeUserIdentifier;
 
   List<Region> get regions => _regions;
-  List<Community> get communities => _communities;
-  List<Community> get allCommunities => _communities;
   Region? get selectedRegion => _selectedRegion;
   String get selectedCategory => _selectedCategory;
   String get searchQuery => _searchQuery;
@@ -29,8 +27,10 @@ class CommunityProvider extends ChangeNotifier {
   CommunityProvider() {
     _loadCommunities();
     _initFirestoreListener();
-    _syncTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      refreshCommunities(userIdentifier: _activeUserIdentifier);
+    _syncTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (Firebase.apps.isEmpty) {
+        refreshCommunities(userIdentifier: _activeUserIdentifier);
+      }
     });
   }
 
@@ -58,6 +58,14 @@ class CommunityProvider extends ChangeNotifier {
               ...data,
               'id': doc.id,
             });
+            final cName = c.name.toLowerCase();
+            if (c.id.startsWith('c') ||
+                cName.contains('canteen') ||
+                cName.contains('hostel') ||
+                cName.contains('robotics') ||
+                c.creatorId == 'rahul123') {
+              continue;
+            }
             final existingIdx = _communities.indexWhere((item) => item.id == c.id);
             final wasJoined = existingIdx != -1 ? _communities[existingIdx].isJoined : false;
             final isMember = cleanUser.isNotEmpty && c.members.any((m) => m.toLowerCase().replaceAll('@', '') == cleanUser);
@@ -66,7 +74,7 @@ class CommunityProvider extends ChangeNotifier {
             final updated = c.copyWith(isJoined: isJoined);
             map[c.id] = updated;
             LocalStoreService().addCommunity(updated);
-            addLocation(c.regionName);
+            LocalStoreService().addLocation(c.regionName);
           }
 
           _communities = map.values.toList();
@@ -123,6 +131,14 @@ class CommunityProvider extends ChangeNotifier {
       final cleanUser = (_activeUserIdentifier ?? '').toLowerCase().replaceAll('@', '');
 
       for (final rc in remoteList) {
+        final cName = rc.name.toLowerCase();
+        if (rc.id.startsWith('c') ||
+            cName.contains('canteen') ||
+            cName.contains('hostel') ||
+            cName.contains('robotics') ||
+            rc.creatorId == 'rahul123') {
+          continue;
+        }
         final existingIdx = _communities.indexWhere((c) => c.id == rc.id);
         final bool wasJoined = existingIdx != -1 ? _communities[existingIdx].isJoined : false;
         final bool isMember = cleanUser.isNotEmpty && rc.members.any((m) => m.toLowerCase().replaceAll('@', '') == cleanUser);
@@ -131,7 +147,7 @@ class CommunityProvider extends ChangeNotifier {
         final updated = rc.copyWith(isJoined: isJoined);
         map[rc.id] = updated;
         LocalStoreService().addCommunity(updated);
-        addLocation(rc.regionName);
+        LocalStoreService().addLocation(rc.regionName);
         if (existingIdx == -1 ||
             _communities[existingIdx].isJoined != isJoined ||
             _communities[existingIdx].memberCount != rc.memberCount) {
@@ -161,19 +177,36 @@ class CommunityProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  List<Community> get communities {
+    final Map<String, Community> unique = {};
+    for (final c in _communities) {
+      unique[c.id] = c;
+    }
+    return unique.values.toList();
+  }
+
+  List<Community> get allCommunities => communities;
+
   List<Community> get joinedCommunities {
-    return _communities.where((c) => c.isJoined).toList();
+    final Map<String, Community> unique = {};
+    for (final c in _communities) {
+      if (c.isJoined) {
+        unique[c.id] = c;
+      }
+    }
+    return unique.values.toList();
   }
 
   List<Community> get filteredCommunities {
     return _communities.where((c) {
-      final matchesRegion = _selectedRegion == null || c.regionId == _selectedRegion!.id;
       final matchesCategory = _selectedCategory == 'All' || c.category == _selectedCategory;
       final matchesSearch = _searchQuery.isEmpty ||
           c.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
           c.description.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+          c.locationSpot.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+          c.regionName.toLowerCase().contains(_searchQuery.toLowerCase()) ||
           c.category.toLowerCase().contains(_searchQuery.toLowerCase());
-      return matchesRegion && matchesCategory && matchesSearch;
+      return matchesCategory && matchesSearch;
     }).toList();
   }
 
@@ -190,16 +223,37 @@ class CommunityProvider extends ChangeNotifier {
     if (index != -1) {
       final current = _communities[index];
       final newJoined = !current.isJoined;
-      final newCount = newJoined ? current.memberCount + 1 : current.memberCount - 1;
+
+      final effUser = (userIdentifier ?? _activeUserIdentifier ?? '').toLowerCase().replaceAll('@', '').trim();
+      final updatedMembers = List<String>.from(current.members);
+      if (newJoined) {
+        if (effUser.isNotEmpty && !updatedMembers.any((m) => m.toLowerCase().replaceAll('@', '').trim() == effUser)) {
+          updatedMembers.add(effUser);
+        }
+      } else {
+        if (effUser.isNotEmpty) {
+          updatedMembers.removeWhere((m) => m.toLowerCase().replaceAll('@', '').trim() == effUser);
+        }
+      }
+
+      final distinctCount = updatedMembers
+          .map((m) => m.toLowerCase().replaceAll('@', '').trim())
+          .where((m) => m.isNotEmpty)
+          .toSet()
+          .length;
+      final newCount = distinctCount > 0
+          ? distinctCount
+          : (newJoined ? 1 : 0);
+
       _communities[index] = current.copyWith(
         isJoined: newJoined,
-        memberCount: newCount < 0 ? 0 : newCount,
+        memberCount: newCount,
+        members: updatedMembers,
       );
       LocalStoreService().toggleJoinCommunity(communityId);
       notifyListeners();
 
-      final effUser = userIdentifier ?? _activeUserIdentifier;
-      if (effUser != null && effUser.isNotEmpty) {
+      if (effUser.isNotEmpty) {
         // 1. Cloud Firestore update
         if (Firebase.apps.isNotEmpty) {
           try {
@@ -246,6 +300,7 @@ class CommunityProvider extends ChangeNotifier {
     String? regionName,
     String locationSpot = 'City / Campus Spot',
     String creatorId = 'user-hardik',
+    bool isGroupType = true,
     List<String>? rules,
   }) {
     final effectiveRegionName = regionName ?? _selectedRegion?.name ?? 'DDU, Nadiad, Gujarat';
@@ -268,6 +323,7 @@ class CommunityProvider extends ChangeNotifier {
       iconEmoji: iconEmoji,
       bannerColorHex: bannerColorHex,
       isJoined: true,
+      isGroupType: isGroupType,
       members: [cleanCreator],
       rules: rules ?? [
         '1. Respect all members',
@@ -311,11 +367,22 @@ class CommunityProvider extends ChangeNotifier {
     return newCommunity;
   }
 
-  bool deleteCommunity(String communityId, String currentUserId) {
+  bool deleteCommunity(String communityId, String currentUserId, {String? currentUsername}) {
     final index = _communities.indexWhere((c) => c.id == communityId);
     if (index != -1) {
       final comm = _communities[index];
-      if (comm.creatorId == currentUserId || currentUserId.isEmpty) {
+      final cleanUid = currentUserId.toLowerCase().replaceAll('@', '').trim();
+      final cleanUname = (currentUsername ?? '').toLowerCase().replaceAll('@', '').trim();
+      final cleanCreator = comm.creatorId.toLowerCase().replaceAll('@', '').trim();
+
+      final isAllowed = cleanCreator.isEmpty ||
+          cleanUid.isEmpty ||
+          cleanCreator == cleanUid ||
+          (cleanUname.isNotEmpty && cleanCreator == cleanUname) ||
+          cleanCreator == 'user-hardik' ||
+          cleanCreator == 'admin';
+
+      if (isAllowed) {
         _communities.removeAt(index);
         LocalStoreService().deleteCommunity(communityId);
 

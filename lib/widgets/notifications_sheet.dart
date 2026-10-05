@@ -4,7 +4,6 @@ import '../models/friend_request.dart';
 import '../providers/auth_provider.dart';
 import '../providers/notification_provider.dart';
 import '../providers/chat_provider.dart';
-import '../services/friendship_service.dart';
 import '../screens/chat/chat_conversation_screen.dart';
 
 class NotificationsSheet extends StatefulWidget {
@@ -32,13 +31,11 @@ class _NotificationsSheetState extends State<NotificationsSheet> {
     final currentUser = auth.currentUser;
 
     try {
-      await auth.respondFriendRequest(req.id, 'accepted');
-
-      if (FriendshipService().isFirebaseInitialized && currentUser != null) {
-        try {
-          await FriendshipService().acceptFriendRequest(req, currentUser);
-        } catch (_) {}
-      }
+      await auth.respondFriendRequest(
+        req.id,
+        'accepted',
+        senderUsername: req.senderUsername,
+      );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -70,24 +67,22 @@ class _NotificationsSheetState extends State<NotificationsSheet> {
     }
   }
 
-  Future<void> _handleDecline(FriendRequest req) async {
+  Future<void> _handleReject(FriendRequest req) async {
     setState(() => _processingIds.add(req.id));
     final auth = context.read<AuthProvider>();
 
     try {
-      await auth.respondFriendRequest(req.id, 'declined');
-
-      if (FriendshipService().isFirebaseInitialized) {
-        try {
-          await FriendshipService().declineFriendRequest(req.id);
-        } catch (_) {}
-      }
+      await auth.respondFriendRequest(
+        req.id,
+        'declined',
+        senderUsername: req.senderUsername,
+      );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            backgroundColor: const Color(0xFF30363D),
-            content: Text('Declined friend request from @${req.senderUsername}.'),
+            backgroundColor: const Color(0xFF21262D),
+            content: Text('Rejected friend request from @${req.senderUsername}.'),
           ),
         );
       }
@@ -211,18 +206,48 @@ class _NotificationsSheetState extends State<NotificationsSheet> {
                       // Section 1: Friend Requests
                       if (incomingRequests.isNotEmpty) ...[
                         Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Icon(Icons.person_add_rounded, size: 16, color: Color(0xFF58A6FF)),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Friend Requests (${incomingRequests.length})',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF8B949E),
-                                letterSpacing: 0.5,
-                              ),
+                            Row(
+                              children: [
+                                const Icon(Icons.person_add_rounded, size: 16, color: Color(0xFF58A6FF)),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Friend Requests (${incomingRequests.length})',
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF8B949E),
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ],
                             ),
+                            if (incomingRequests.isNotEmpty)
+                              InkWell(
+                                onTap: () async {
+                                  for (final req in List.from(incomingRequests)) {
+                                    await _handleAccept(req);
+                                  }
+                                },
+                                borderRadius: BorderRadius.circular(6),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF21262D),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: const Color(0xFF238636)),
+                                  ),
+                                  child: const Text(
+                                    'Accept All',
+                                    style: TextStyle(
+                                      color: Color(0xFF238636),
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
                           ],
                         ),
                         const SizedBox(height: 10),
@@ -315,7 +340,7 @@ class _NotificationsSheetState extends State<NotificationsSheet> {
                                     const SizedBox(width: 10),
                                     Expanded(
                                       child: OutlinedButton(
-                                        onPressed: isBusy ? null : () => _handleDecline(req),
+                                        onPressed: isBusy ? null : () => _handleReject(req),
                                         style: OutlinedButton.styleFrom(
                                           foregroundColor: const Color(0xFFF85149),
                                           side: const BorderSide(color: Color(0xFFF85149)),
@@ -329,7 +354,7 @@ class _NotificationsSheetState extends State<NotificationsSheet> {
                                           children: [
                                             Icon(Icons.close, size: 16),
                                             SizedBox(width: 6),
-                                            Text('Decline', style: TextStyle(fontWeight: FontWeight.bold)),
+                                            Text('Reject', style: TextStyle(fontWeight: FontWeight.bold)),
                                           ],
                                         ),
                                       ),

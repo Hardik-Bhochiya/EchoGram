@@ -6,6 +6,8 @@ import '../../providers/auth_provider.dart';
 import '../../services/user_service.dart';
 import '../../services/friendship_service.dart';
 import '../profile/user_profile_screen.dart';
+import '../../providers/chat_provider.dart';
+import '../chat/chat_conversation_screen.dart';
 
 class PeopleScreen extends StatefulWidget {
   const PeopleScreen({super.key});
@@ -334,6 +336,30 @@ class _PeopleScreenState extends State<PeopleScreen> {
                 ],
               ),
             ),
+            const SizedBox(width: 8),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF21262D),
+                foregroundColor: const Color(0xFF58A6FF),
+                side: const BorderSide(color: Color(0xFF30363D)),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: () {
+                final auth = context.read<AuthProvider>();
+                final currentUser = auth.currentUser;
+                if (currentUser == null) return;
+                final chatProvider = context.read<ChatProvider>();
+                final room = chatProvider.startPersonalChat(peerUser: user, currentUser: currentUser);
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => ChatConversationScreen(roomId: room.id)),
+                );
+              },
+              child: const Text('Message', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            ),
+            const SizedBox(width: 4),
             const Icon(Icons.chevron_right_rounded, color: Color(0xFF484F58), size: 20),
           ],
         ),

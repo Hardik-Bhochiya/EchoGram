@@ -13,23 +13,14 @@ class MockDataService {
   static String generateId() => _uuid.v4();
 
   static User currentUser = const User(
-    id: 'user-hardik',
-    username: 'hardik_07',
-    name: 'Hardik Bhochiya',
-    firstName: 'Hardik',
-    lastName: 'Bhochiya',
-    email: 'hardik@gmail.com',
-    campusOrCity: 'Nadiad',
-    majorOrBio: 'Computer Engineering | Tech & Community Builder',
-    reputation: 240,
-    joinedCommunityIds: [],
-    badges: ['Top Contributor', 'Community Builder'],
-    isCollegeVerified: true,
+    id: '',
+    username: '',
+    name: '',
+    email: '',
+    campusOrCity: '',
   );
 
-  static List<User> knownUsers = [
-    currentUser,
-  ];
+  static List<User> knownUsers = [];
 
   static List<Region> initialRegions = [
     const Region(

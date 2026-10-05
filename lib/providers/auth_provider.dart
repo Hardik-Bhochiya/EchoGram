@@ -4,12 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
 import '../models/friend_request.dart';
+import '../models/chat_room.dart';
+import 'chat_provider.dart';
 import '../services/auth_service.dart';
 import '../services/local_store_service.dart';
 import '../services/api_service.dart';
 import '../services/mock_data_service.dart';
 import '../services/socket_service.dart';
 import '../services/friendship_service.dart';
+import '../services/user_service.dart';
 
 enum AuthStatus { unauthenticated, authenticating, authenticated }
 
@@ -25,6 +28,17 @@ class AuthProvider extends ChangeNotifier {
   StreamSubscription? _authSub;
   StreamSubscription? _frReceivedSub;
   StreamSubscription? _frAcceptedSub;
+  StreamSubscription? _frDeclinedSub;
+
+  // Real-time Cloud Firestore Subscriptions for 100% Cross-Device Consistency
+  StreamSubscription? _firestoreIncomingFrSub;
+  StreamSubscription? _firestoreOutgoingFrSub;
+  StreamSubscription? _firestoreFriendshipsSub;
+
+  List<FriendRequest> _incomingRequests = [];
+  List<FriendRequest> _outgoingRequests = [];
+  List<User> _friendsList = [];
+  Set<String> _friendUsernamesSet = {};
 
   User? get currentUser => _currentUser;
   bool get isAuthenticated => _isAuthenticated;
@@ -53,6 +67,7 @@ class AuthProvider extends ChangeNotifier {
               _status = AuthStatus.authenticated;
               final prefs = await SharedPreferences.getInstance();
               await prefs.setString('saved_user', jsonEncode(profile.toJson()));
+              _initFirestoreFriendListeners(profile);
               notifyListeners();
               return;
             }
@@ -70,11 +85,21 @@ class AuthProvider extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       final userJson = prefs.getString('saved_user');
       if (userJson != null) {
-        _currentUser = User.fromJson(jsonDecode(userJson));
+        final loaded = User.fromJson(jsonDecode(userJson));
+        if (loaded.id == 'user-hardik' || loaded.username == 'hardik_07' || loaded.username.isEmpty) {
+          await prefs.remove('saved_user');
+          _currentUser = null;
+          _isAuthenticated = false;
+          _status = AuthStatus.unauthenticated;
+          notifyListeners();
+          return;
+        }
+        _currentUser = loaded;
         _isAuthenticated = true;
         _isGuest = false;
         _status = AuthStatus.authenticated;
         SocketService().joinUser(_currentUser!.id, _currentUser!.username);
+        _initFirestoreFriendListeners(_currentUser!);
         syncFriendData();
         notifyListeners();
       }
@@ -83,6 +108,14 @@ class AuthProvider extends ChangeNotifier {
 
   void clearError() {
     _errorMessage = null;
+    notifyListeners();
+  }
+
+  void setCurrentUserForTesting(User user) {
+    _currentUser = user;
+    _isAuthenticated = true;
+    _isGuest = false;
+    _status = AuthStatus.authenticated;
     notifyListeners();
   }
 
@@ -185,6 +218,7 @@ class AuthProvider extends ChangeNotifier {
         await prefs.setString('saved_user', jsonEncode(user.toJson()));
 
         SocketService().joinUser(user.id, user.username);
+        _initFirestoreFriendListeners(user);
         syncFriendData();
 
         notifyListeners();
@@ -321,6 +355,7 @@ class AuthProvider extends ChangeNotifier {
       await prefs.setString('saved_user', jsonEncode(user.toJson()));
 
       SocketService().joinUser(user.id, user.username);
+      _initFirestoreFriendListeners(user);
       syncFriendData();
 
       notifyListeners();
@@ -363,13 +398,45 @@ class AuthProvider extends ChangeNotifier {
     String? avatarUrl,
   }) async {
     if (_currentUser != null) {
-      _currentUser = _currentUser!.copyWith(
+      final updated = _currentUser!.copyWith(
         name: name,
         campusOrCity: campusOrCity,
         majorOrBio: majorOrBio,
         avatarUrl: avatarUrl ?? _currentUser!.avatarUrl,
       );
+      _currentUser = updated;
 
+      // 1. Update in LocalStoreService immediately
+      LocalStoreService().saveUser(updated);
+
+      // 2. Persist to SharedPreferences immediately
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('saved_user', jsonEncode(updated.toJson()));
+
+      // 3. Update in _knownUsers list
+      final kIdx = _knownUsers.indexWhere((k) => k.username.toLowerCase() == updated.username.toLowerCase());
+      if (kIdx != -1) {
+        _knownUsers[kIdx] = updated;
+      }
+
+      // 4. Update in Backend Database (MongoDB & in-memory store)
+      try {
+        final remoteUser = await ApiService().updateProfile(
+          id: updated.id,
+          username: updated.username,
+          name: name,
+          campusOrCity: campusOrCity,
+          majorOrBio: majorOrBio,
+          avatarUrl: avatarUrl,
+        );
+        if (remoteUser != null) {
+          _currentUser = remoteUser;
+          LocalStoreService().saveUser(remoteUser);
+          await prefs.setString('saved_user', jsonEncode(remoteUser.toJson()));
+        }
+      } catch (_) {}
+
+      // 5. Update Cloud Firestore
       try {
         await _authService.updateProfile(
           uid: _currentUser!.id,
@@ -380,10 +447,6 @@ class AuthProvider extends ChangeNotifier {
         );
       } catch (_) {}
 
-      LocalStoreService().saveUser(_currentUser!);
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('saved_user', jsonEncode(_currentUser!.toJson()));
       notifyListeners();
     }
   }
@@ -416,6 +479,13 @@ class AuthProvider extends ChangeNotifier {
     _isAuthenticated = false;
     _isGuest = false;
     _status = AuthStatus.unauthenticated;
+    _firestoreIncomingFrSub?.cancel();
+    _firestoreOutgoingFrSub?.cancel();
+    _firestoreFriendshipsSub?.cancel();
+    _incomingRequests.clear();
+    _outgoingRequests.clear();
+    _friendsList.clear();
+    _friendUsernamesSet.clear();
     try {
       await _authService.signOut();
     } catch (_) {}
@@ -427,56 +497,242 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // --- Real-time Cloud Firestore Friend Listeners (100% Online Consistency) ---
+
+  void _initFirestoreFriendListeners(User user) {
+    _firestoreIncomingFrSub?.cancel();
+    _firestoreOutgoingFrSub?.cancel();
+    _firestoreFriendshipsSub?.cancel();
+
+    final cleanMyUsername = user.username.trim().toLowerCase().replaceAll('@', '');
+    if (cleanMyUsername.isEmpty) return;
+
+    // 1. Live Incoming Friend Requests (realtime delivery for notifications)
+    _firestoreIncomingFrSub = FriendshipService()
+        .streamPendingIncomingRequests(cleanMyUsername)
+        .listen((reqList) {
+      _incomingRequests = reqList;
+      for (final req in reqList) {
+        LocalStoreService().addFriendRequest(req);
+      }
+      notifyListeners();
+    }, onError: (err) {
+      debugPrint('[AuthProvider] Firestore incoming stream notice: $err');
+    });
+
+    // 2. Live Outgoing Friend Requests (updates if rejected or accepted)
+    _firestoreOutgoingFrSub = FriendshipService()
+        .streamOutgoingRequests(cleanMyUsername)
+        .listen((reqList) {
+      _outgoingRequests = reqList;
+      for (final req in reqList) {
+        LocalStoreService().addFriendRequest(req);
+        if (req.isDeclined) {
+          LocalStoreService().respondFriendRequest(
+            req.id,
+            'declined',
+            senderUsername: req.senderUsername,
+            receiverUsername: req.receiverUsername,
+          );
+        }
+      }
+      notifyListeners();
+    }, onError: (err) {
+      debugPrint('[AuthProvider] Firestore outgoing stream notice: $err');
+    });
+
+    // 3. Live Friendships (synchronized across all ports, devices, and sessions)
+    _firestoreFriendshipsSub = FriendshipService()
+        .streamFriendships(cleanMyUsername)
+        .listen((friendshipList) {
+      final Set<String> updatedUsernames = {};
+      final List<User> updatedFriends = [];
+
+      for (final f in friendshipList) {
+        final u1Clean = f.user1.toLowerCase().replaceAll('@', '').trim();
+        final u2Clean = f.user2.toLowerCase().replaceAll('@', '').trim();
+        String otherUname = (u1Clean == cleanMyUsername)
+            ? u2Clean
+            : (u2Clean == cleanMyUsername ? u1Clean : '');
+
+        if (otherUname.isEmpty) {
+          for (final u in f.usernames) {
+            final cu = u.toLowerCase().replaceAll('@', '').trim();
+            if (cu.isNotEmpty && cu != cleanMyUsername) {
+              otherUname = cu;
+              break;
+            }
+          }
+        }
+
+        if (otherUname.isEmpty && f.id.contains('_')) {
+          final parts = f.id.toLowerCase().replaceAll('@', '').split('_');
+          for (final p in parts) {
+            final cp = p.trim();
+            if (cp.isNotEmpty && cp != cleanMyUsername) {
+              otherUname = cp;
+              break;
+            }
+          }
+        }
+
+        if (otherUname.isNotEmpty && otherUname != cleanMyUsername) {
+          updatedUsernames.add(otherUname.toLowerCase());
+          LocalStoreService().addFriend(cleanMyUsername, otherUname);
+
+          User? friendUser = findUserByUsername(otherUname);
+          if (friendUser == null) {
+            final otherDisplayName = (u1Clean == cleanMyUsername)
+                ? (f.user2Name ?? otherUname)
+                : (f.user1Name ?? otherUname);
+            final otherAvatar = (u1Clean == cleanMyUsername)
+                ? f.user2Avatar
+                : f.user1Avatar;
+            friendUser = User(
+              id: 'user_$otherUname',
+              username: otherUname,
+              name: otherDisplayName,
+              avatarUrl: otherAvatar,
+              email: '$otherUname@neartalk.local',
+              campusOrCity: 'NearTalk Campus',
+              createdAt: f.createdAt,
+            );
+          }
+          updatedFriends.add(friendUser);
+          if (!_knownUsers.any((k) => k.username.toLowerCase() == otherUname.toLowerCase())) {
+            _knownUsers.add(friendUser);
+          }
+        }
+      }
+
+      _friendUsernamesSet = updatedUsernames;
+      _friendsList = updatedFriends;
+      notifyListeners();
+    }, onError: (err) {
+      debugPrint('[AuthProvider] Firestore friendships stream notice: $err');
+    });
+  }
+
   // --- Friends & Friend Requests Methods for UI Compatibility ---
 
   String get _activeUsername => _currentUser?.username ?? 'user';
 
   List<User> getFriends() {
     if (_currentUser == null) return [];
+    final Map<String, User> combined = {};
+
+    // 1. Live friends from Cloud Firestore
+    for (final f in _friendsList) {
+      combined[f.username.toLowerCase()] = f;
+    }
+
+    // 2. Friends from LocalStore
     final friendUsernames = LocalStoreService().getFriendUsernames(_activeUsername);
-    return friendUsernames.map((u) {
-      final existing = _knownUsers.where((k) => k.username.toLowerCase() == u.toLowerCase());
-      if (existing.isNotEmpty) return existing.first;
-      return User(
-        id: 'user_$u',
-        name: u,
-        username: u,
-        email: '$u@neartalk.local',
-        campusOrCity: 'Local',
-        createdAt: DateTime.now(),
-      );
-    }).toList();
+    for (final u in friendUsernames) {
+      final clean = u.toLowerCase();
+      if (!combined.containsKey(clean)) {
+        final existing = _knownUsers.where((k) => k.username.toLowerCase() == clean);
+        if (existing.isNotEmpty) {
+          combined[clean] = existing.first;
+        } else {
+          combined[clean] = User(
+            id: 'user_$clean',
+            name: clean,
+            username: clean,
+            email: '$clean@neartalk.local',
+            campusOrCity: 'Campus',
+            createdAt: DateTime.now(),
+          );
+        }
+      }
+    }
+
+    return combined.values.toList();
   }
 
   bool areFriends(String username) {
-    return LocalStoreService().areFriends(_activeUsername, username);
+    final clean = username.trim().toLowerCase().replaceAll('@', '');
+    if (_currentUser != null && _currentUser!.username.toLowerCase() == clean) return true;
+    if (_friendUsernamesSet.contains(clean)) return true;
+    return LocalStoreService().areFriends(_activeUsername, clean);
   }
 
   List<FriendRequest> getPendingIncomingRequests() {
-    return LocalStoreService().getPendingIncomingRequests(_activeUsername);
+    final local = LocalStoreService().getPendingIncomingRequests(_activeUsername);
+    final Map<String, FriendRequest> map = {};
+    for (final r in _incomingRequests.where((r) => r.isPending)) {
+      map[r.senderUsername.toLowerCase()] = r;
+    }
+    for (final r in local) {
+      map.putIfAbsent(r.senderUsername.toLowerCase(), () => r);
+    }
+    return map.values.toList();
   }
 
   List<FriendRequest> getPendingOutgoingRequests() {
-    return LocalStoreService().getPendingOutgoingRequests(_activeUsername);
+    final local = LocalStoreService().getPendingOutgoingRequests(_activeUsername);
+    final Map<String, FriendRequest> map = {};
+    for (final r in _outgoingRequests.where((r) => r.isPending)) {
+      map[r.receiverUsername.toLowerCase()] = r;
+    }
+    for (final r in local) {
+      final clean = r.receiverUsername.toLowerCase();
+      final hasDeclined = _outgoingRequests.any(
+        (o) => o.receiverUsername.toLowerCase() == clean && o.isDeclined,
+      );
+      if (!hasDeclined) {
+        map.putIfAbsent(clean, () => r);
+      }
+    }
+    return map.values.toList();
   }
 
   bool isPendingOutgoing(String targetUsername) {
     final tUser = targetUsername.trim().toLowerCase().replaceAll('@', '');
-    final outgoing = getPendingOutgoingRequests();
-    return outgoing.any((r) => r.receiverUsername.trim().toLowerCase().replaceAll('@', '') == tUser && r.isPending);
+    if (areFriends(tUser)) return false;
+
+    // Check live outgoing requests from Firestore
+    for (final r in _outgoingRequests) {
+      if (r.receiverUsername.trim().toLowerCase().replaceAll('@', '') == tUser) {
+        if (r.isDeclined) return false;
+        if (r.isPending) return true;
+      }
+    }
+
+    // Check local store
+    final outgoing = LocalStoreService().getPendingOutgoingRequests(_activeUsername);
+    return outgoing.any((r) =>
+        r.receiverUsername.trim().toLowerCase().replaceAll('@', '') == tUser && r.isPending);
   }
 
   bool isPendingIncoming(String targetUsername) {
     final tUser = targetUsername.trim().toLowerCase().replaceAll('@', '');
-    final incoming = getPendingIncomingRequests();
-    return incoming.any((r) => r.senderUsername.trim().toLowerCase().replaceAll('@', '') == tUser && r.isPending);
+    if (areFriends(tUser)) return false;
+
+    for (final r in _incomingRequests) {
+      if (r.senderUsername.trim().toLowerCase().replaceAll('@', '') == tUser && r.isPending) {
+        return true;
+      }
+    }
+
+    final incoming = LocalStoreService().getPendingIncomingRequests(_activeUsername);
+    return incoming.any((r) =>
+        r.senderUsername.trim().toLowerCase().replaceAll('@', '') == tUser && r.isPending);
   }
 
   FriendRequest? getIncomingRequestFrom(String targetUsername) {
     final tUser = targetUsername.trim().toLowerCase().replaceAll('@', '');
-    final incoming = getPendingIncomingRequests();
     try {
-      return incoming.firstWhere((r) => r.senderUsername.trim().toLowerCase().replaceAll('@', '') == tUser && r.isPending);
+      return _incomingRequests.firstWhere(
+        (r) => r.senderUsername.trim().toLowerCase().replaceAll('@', '') == tUser && r.isPending,
+      );
+    } catch (_) {}
+
+    final incoming = LocalStoreService().getPendingIncomingRequests(_activeUsername);
+    try {
+      return incoming.firstWhere(
+        (r) => r.senderUsername.trim().toLowerCase().replaceAll('@', '') == tUser && r.isPending,
+      );
     } catch (_) {
       return null;
     }
@@ -485,6 +741,7 @@ class AuthProvider extends ChangeNotifier {
   void _setupSocketListeners() {
     _frReceivedSub?.cancel();
     _frAcceptedSub?.cancel();
+    _frDeclinedSub?.cancel();
 
     _frReceivedSub = SocketService().onFriendRequestReceived.listen((data) {
       try {
@@ -507,9 +764,84 @@ class AuthProvider extends ChangeNotifier {
         if (sUser != null && rUser != null) {
           LocalStoreService().addFriend(sUser, rUser);
         }
+
+        final cleanMy = _activeUsername.trim().toLowerCase().replaceAll('@', '');
+        final sClean = (sUser ?? '').trim().toLowerCase().replaceAll('@', '');
+        final rClean = (rUser ?? '').trim().toLowerCase().replaceAll('@', '');
+        final otherUname = (sClean == cleanMy) ? rClean : (rClean == cleanMy ? sClean : '');
+
+        if (otherUname.isNotEmpty && otherUname != cleanMy) {
+          _friendUsernamesSet.add(otherUname);
+          final friendUser = findUserByUsername(otherUname) ??
+              User(
+                id: 'user_$otherUname',
+                username: otherUname,
+                name: otherUname,
+                email: '$otherUname@neartalk.local',
+                campusOrCity: 'NearTalk Campus',
+                createdAt: DateTime.now(),
+              );
+          if (!_friendsList.any((f) => f.username.toLowerCase() == otherUname)) {
+            _friendsList.add(friendUser);
+          }
+          if (!_knownUsers.any((k) => k.username.toLowerCase() == otherUname)) {
+            _knownUsers.add(friendUser);
+          }
+
+          // Automatically create direct chat room so new user is added to chats immediately (Instagram-style)
+          final directRoomId = ChatProvider.getDirectRoomId(cleanMy, otherUname);
+          final newRoom = ChatRoom(
+            id: directRoomId,
+            title: '@$otherUname',
+            subtitle: friendUser.name.isNotEmpty ? friendUser.name : '@$otherUname',
+            avatarEmoji: (friendUser.avatarUrl != null && friendUser.avatarUrl!.isNotEmpty)
+                ? friendUser.avatarUrl!
+                : '👤',
+            isGroup: false,
+            lastMessage: 'You are now connected! Say hello 👋',
+            lastMessageTime: DateTime.now(),
+            unreadCount: 0,
+            isOnline: true,
+            participantIds: [_currentUser?.id ?? cleanMy, friendUser.id],
+          );
+          LocalStoreService().addOrUpdateRoom(newRoom);
+        }
+
+        _outgoingRequests.removeWhere((r) =>
+            r.receiverUsername.toLowerCase().replaceAll('@', '') == otherUname ||
+            r.senderUsername.toLowerCase().replaceAll('@', '') == otherUname);
+        _incomingRequests.removeWhere((r) =>
+            r.receiverUsername.toLowerCase().replaceAll('@', '') == otherUname ||
+            r.senderUsername.toLowerCase().replaceAll('@', '') == otherUname);
+
         notifyListeners();
       } catch (e) {
         debugPrint('[AuthProvider] onFriendRequestAccepted error: $e');
+      }
+    });
+
+    _frDeclinedSub = SocketService().onFriendRequestDeclined.listen((data) {
+      try {
+        final reqId = data['requestId'] as String?;
+        final sUser = (data['senderUsername'] as String? ?? '').trim().toLowerCase().replaceAll('@', '');
+        final rUser = (data['receiverUsername'] as String? ?? '').trim().toLowerCase().replaceAll('@', '');
+        if (reqId != null) {
+          LocalStoreService().respondFriendRequest(reqId, 'declined', senderUsername: sUser, receiverUsername: rUser);
+        }
+        LocalStoreService().cancelFriendRequest(sUser, rUser);
+
+        _outgoingRequests.removeWhere((r) =>
+            (reqId != null && r.id == reqId) ||
+            (r.receiverUsername.toLowerCase().replaceAll('@', '') == rUser && r.senderUsername.toLowerCase().replaceAll('@', '') == sUser) ||
+            (r.receiverUsername.toLowerCase().replaceAll('@', '') == sUser && r.senderUsername.toLowerCase().replaceAll('@', '') == rUser));
+        _incomingRequests.removeWhere((r) =>
+            (reqId != null && r.id == reqId) ||
+            (r.receiverUsername.toLowerCase().replaceAll('@', '') == rUser && r.senderUsername.toLowerCase().replaceAll('@', '') == sUser) ||
+            (r.receiverUsername.toLowerCase().replaceAll('@', '') == sUser && r.senderUsername.toLowerCase().replaceAll('@', '') == rUser));
+
+        notifyListeners();
+      } catch (e) {
+        debugPrint('[AuthProvider] onFriendRequestDeclined error: $e');
       }
     });
   }
@@ -540,42 +872,53 @@ class AuthProvider extends ChangeNotifier {
   Future<void> cancelFriendRequest(String targetUsername) async {
     final tUser = targetUsername.trim().toLowerCase().replaceAll('@', '');
     LocalStoreService().cancelFriendRequest(_activeUsername, tUser);
+    if (FriendshipService().isFirebaseInitialized) {
+      await FriendshipService().cancelFriendRequest(_activeUsername, tUser);
+    }
     ApiService().cancelFriendRequest(_activeUsername, tUser);
     notifyListeners();
   }
 
   Future<bool> sendFriendRequest(String targetUsername) async {
+    if (_currentUser == null) return false;
     final senderName = _currentUser?.name ?? _currentUser?.username ?? 'User';
     final senderUname = _activeUsername;
-    final currentUid = _currentUser?.id ?? 'user_${DateTime.now().millisecondsSinceEpoch}';
+    final cleanTarget = targetUsername.trim().toLowerCase().replaceAll('@', '');
+
+    // Resolve target user record
+    User targetUser = findUserByUsername(cleanTarget) ??
+        await UserService().findUserByUsername(cleanTarget) ??
+        User(
+          id: 'user_$cleanTarget',
+          name: cleanTarget,
+          username: cleanTarget,
+          email: '$cleanTarget@neartalk.local',
+          campusOrCity: 'Campus',
+          createdAt: DateTime.now(),
+        );
+
     final req = FriendRequest(
-      id: 'req_${DateTime.now().millisecondsSinceEpoch}',
-      senderId: currentUid,
+      id: '${senderUname}_to_$cleanTarget',
+      senderId: _currentUser!.id,
       senderUsername: senderUname,
       senderName: senderName,
       senderAvatar: _currentUser?.avatarUrl,
-      receiverId: 'target_$targetUsername',
-      receiverUsername: targetUsername,
-      receiverName: targetUsername,
+      receiverId: targetUser.id,
+      receiverUsername: cleanTarget,
+      receiverName: targetUser.name,
       status: 'pending',
       createdAt: DateTime.now(),
     );
 
+    // Optimistic local update
+    _outgoingRequests.removeWhere((r) => r.receiverUsername.toLowerCase() == cleanTarget);
+    _outgoingRequests.add(req);
     LocalStoreService().addFriendRequest(req);
     notifyListeners();
 
-    // 1. Firestore Cloud Database write
-    if (FriendshipService().isFirebaseInitialized && _currentUser != null) {
+    // 1. Cloud Firestore write
+    if (FriendshipService().isFirebaseInitialized) {
       try {
-        final targetUser = findUserByUsername(targetUsername) ??
-            User(
-              id: 'target_$targetUsername',
-              name: targetUsername,
-              username: targetUsername,
-              email: '$targetUsername@neartalk.local',
-              campusOrCity: 'Campus',
-              createdAt: DateTime.now(),
-            );
         await FriendshipService().sendFriendRequest(_currentUser!, targetUser);
       } catch (e) {
         debugPrint('[AuthProvider] Firestore sendFriendRequest notice: $e');
@@ -585,10 +928,10 @@ class AuthProvider extends ChangeNotifier {
     // 2. Also dispatch to API and WebSockets for local compatibility
     try {
       await ApiService().sendFriendRequest(
-        senderId: currentUid,
+        senderId: _currentUser!.id,
         senderUsername: senderUname,
         senderName: senderName,
-        receiverUsername: targetUsername,
+        receiverUsername: cleanTarget,
         senderAvatar: _currentUser?.avatarUrl,
       );
       SocketService().sendFriendRequest(req.toJson());
@@ -598,29 +941,123 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> respondFriendRequest(String requestId, String status, {String? senderUsername}) async {
-    LocalStoreService().respondFriendRequest(requestId, status);
+    if (_currentUser == null) return;
+    final cleanSender = senderUsername?.trim().toLowerCase().replaceAll('@', '');
+
+    FriendRequest? reqObj;
+    try {
+      reqObj = _incomingRequests.firstWhere(
+        (r) => r.id == requestId || r.senderUsername.toLowerCase() == cleanSender,
+      );
+    } catch (_) {
+      try {
+        reqObj = _outgoingRequests.firstWhere(
+          (r) => r.id == requestId || r.receiverUsername.toLowerCase() == cleanSender,
+        );
+      } catch (_) {
+        final localList = LocalStoreService().getFriendRequests(_activeUsername);
+        try {
+          reqObj = localList.firstWhere(
+            (r) => r.id == requestId || r.senderUsername.toLowerCase() == cleanSender || r.receiverUsername.toLowerCase() == cleanSender,
+          );
+        } catch (_) {}
+      }
+    }
+
+    reqObj ??= FriendRequest(
+      id: requestId,
+      senderId: cleanSender ?? 'sender',
+      senderUsername: cleanSender ?? 'sender',
+      senderName: cleanSender ?? 'sender',
+      receiverId: _currentUser!.id,
+      receiverUsername: _currentUser!.username,
+      receiverName: _currentUser!.name,
+      status: status,
+      createdAt: DateTime.now(),
+    );
+
+    // Optimistic local state update
+    LocalStoreService().respondFriendRequest(
+      requestId,
+      status,
+      senderUsername: reqObj.senderUsername,
+      receiverUsername: reqObj.receiverUsername,
+    );
+
+    final otherUsername = reqObj.senderUsername.toLowerCase() == _activeUsername.toLowerCase()
+        ? reqObj.receiverUsername
+        : reqObj.senderUsername;
+    final otherId = reqObj.senderUsername.toLowerCase() == _activeUsername.toLowerCase()
+        ? reqObj.receiverId
+        : reqObj.senderId;
+    final otherName = reqObj.senderUsername.toLowerCase() == _activeUsername.toLowerCase()
+        ? reqObj.receiverName
+        : reqObj.senderName;
+    final otherAvatar = reqObj.senderUsername.toLowerCase() == _activeUsername.toLowerCase()
+        ? null
+        : reqObj.senderAvatar;
+
+    if (status == 'accepted') {
+      _friendUsernamesSet.add(otherUsername.toLowerCase());
+      final friendUser = findUserByUsername(otherUsername) ??
+          User(
+            id: otherId,
+            username: otherUsername,
+            name: otherName,
+            avatarUrl: otherAvatar,
+            email: '$otherUsername@neartalk.local',
+            campusOrCity: 'Campus',
+            createdAt: DateTime.now(),
+          );
+      if (!_friendsList.any((f) => f.username.toLowerCase() == otherUsername.toLowerCase())) {
+        _friendsList.add(friendUser);
+      }
+
+      // Automatically create direct chat room so both users have the chat immediately (Instagram-style)
+      final directRoomId = ChatProvider.getDirectRoomId(_activeUsername, otherUsername);
+      final newRoom = ChatRoom(
+        id: directRoomId,
+        title: '@${otherUsername.replaceAll('@', '')}',
+        subtitle: otherName.isNotEmpty ? otherName : '@${otherUsername.replaceAll('@', '')}',
+        avatarEmoji: (otherAvatar != null && otherAvatar.isNotEmpty) ? otherAvatar : '👤',
+        isGroup: false,
+        lastMessage: 'You are now connected! Say hello 👋',
+        lastMessageTime: DateTime.now(),
+        unreadCount: 0,
+        isOnline: true,
+        participantIds: [_currentUser!.id, otherId],
+      );
+      LocalStoreService().addOrUpdateRoom(newRoom);
+    } else {
+      // Rejection / Decline: completely remove pending request so sender can request again
+      LocalStoreService().respondFriendRequest(
+        requestId,
+        'declined',
+        senderUsername: reqObj.senderUsername,
+        receiverUsername: reqObj.receiverUsername,
+      );
+      LocalStoreService().cancelFriendRequest(reqObj.senderUsername, reqObj.receiverUsername);
+    }
+
+    _incomingRequests.removeWhere(
+      (r) => r.id == requestId || r.senderUsername.toLowerCase() == otherUsername.toLowerCase(),
+    );
+    _outgoingRequests.removeWhere(
+      (r) => r.id == requestId || r.receiverUsername.toLowerCase() == otherUsername.toLowerCase(),
+    );
     notifyListeners();
 
-    // 1. Firestore Cloud Database update
-    if (FriendshipService().isFirebaseInitialized && _currentUser != null) {
+    // 1. Cloud Firestore update
+    if (FriendshipService().isFirebaseInitialized) {
       try {
         if (status == 'accepted') {
-          final reqObj = LocalStoreService().getFriendRequests(_activeUsername).firstWhere(
-            (r) => r.id == requestId,
-            orElse: () => FriendRequest(
-              id: requestId,
-              senderId: senderUsername ?? 'sender',
-              senderUsername: senderUsername ?? 'sender',
-              senderName: senderUsername ?? 'sender',
-              receiverId: _currentUser!.id,
-              receiverUsername: _currentUser!.username,
-              receiverName: _currentUser!.name,
-              createdAt: DateTime.now(),
-            ),
-          );
           await FriendshipService().acceptFriendRequest(reqObj, _currentUser!);
         } else {
-          await FriendshipService().declineFriendRequest(requestId);
+          await FriendshipService().declineFriendRequest(
+            requestId,
+            senderUsername: reqObj.senderUsername,
+            receiverUsername: _currentUser!.username,
+          );
         }
       } catch (e) {
         debugPrint('[AuthProvider] Firestore respondFriendRequest notice: $e');
@@ -632,13 +1069,13 @@ class AuthProvider extends ChangeNotifier {
       await ApiService().respondFriendRequest(
         requestId,
         status,
-        senderUsername: senderUsername,
+        senderUsername: reqObj.senderUsername,
         receiverUsername: _activeUsername,
       );
       SocketService().respondFriendRequest(
         requestId: requestId,
         status: status,
-        senderUsername: senderUsername ?? '',
+        senderUsername: reqObj.senderUsername,
         receiverUsername: _activeUsername,
       );
     } catch (_) {}
@@ -647,7 +1084,12 @@ class AuthProvider extends ChangeNotifier {
   Future<void> unfriend(String targetUsername) async {
     if (_currentUser == null) return;
     final tUser = targetUsername.trim().toLowerCase().replaceAll('@', '');
+    _friendUsernamesSet.remove(tUser);
+    _friendsList.removeWhere((f) => f.username.toLowerCase() == tUser);
     LocalStoreService().removeFriend(_currentUser!.username, tUser);
+    if (FriendshipService().isFirebaseInitialized) {
+      await FriendshipService().removeFriend(_currentUser!.username, tUser);
+    }
     ApiService().unfriend(_currentUser!.username, tUser);
     notifyListeners();
   }
@@ -661,6 +1103,10 @@ class AuthProvider extends ChangeNotifier {
     _authSub?.cancel();
     _frReceivedSub?.cancel();
     _frAcceptedSub?.cancel();
+    _frDeclinedSub?.cancel();
+    _firestoreIncomingFrSub?.cancel();
+    _firestoreOutgoingFrSub?.cancel();
+    _firestoreFriendshipsSub?.cancel();
     super.dispose();
   }
 }

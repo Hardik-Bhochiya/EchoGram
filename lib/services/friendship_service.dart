@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user.dart';
@@ -20,154 +21,199 @@ class FriendshipService {
   bool get isFirebaseInitialized => Firebase.apps.isNotEmpty;
   FirebaseFirestore get _firestore => FirebaseFirestore.instance;
 
-  String _getSortedFriendshipId(String uid1, String uid2) {
+  String getCanonicalFriendshipId(String username1, String username2) {
+    final u1 = username1.trim().toLowerCase().replaceAll('@', '');
+    final u2 = username2.trim().toLowerCase().replaceAll('@', '');
+    final list = [u1, u2]..sort();
+    return '${list[0]}_${list[1]}';
+  }
+
+  String _getSortedUidFriendshipId(String uid1, String uid2) {
     final list = [uid1, uid2]..sort();
     return '${list[0]}_${list[1]}';
   }
 
   /// Get relationship state between current user and target user
-  Future<RelationshipState> getRelationshipState(String currentUserId, String otherUserId) async {
-    if (currentUserId == otherUserId) return RelationshipState.self;
+  Future<RelationshipState> getRelationshipState({
+    required String currentUsername,
+    required String currentUserId,
+    required String otherUsername,
+    required String otherUserId,
+  }) async {
+    final cUser = currentUsername.trim().toLowerCase().replaceAll('@', '');
+    final oUser = otherUsername.trim().toLowerCase().replaceAll('@', '');
+
+    if (cUser == oUser || currentUserId == otherUserId) return RelationshipState.self;
     if (!isFirebaseInitialized) return RelationshipState.none;
 
     try {
-      // 1. Check if already friends
-      final friendshipId = _getSortedFriendshipId(currentUserId, otherUserId);
-      final friendshipDoc = await _firestore.collection('friendships').doc(friendshipId).get();
-      if (friendshipDoc.exists) {
+      // 1. Check canonical username-based friendship doc
+      final canonicalId = getCanonicalFriendshipId(cUser, oUser);
+      final doc1 = await _firestore.collection('friendships').doc(canonicalId).get();
+      if (doc1.exists) {
         return RelationshipState.friends;
       }
 
-      // 2. Check for pending outgoing request
+      // 1b. Check UID-based friendship doc fallback
+      if (currentUserId.isNotEmpty && otherUserId.isNotEmpty) {
+        final uidId = _getSortedUidFriendshipId(currentUserId, otherUserId);
+        final doc2 = await _firestore.collection('friendships').doc(uidId).get();
+        if (doc2.exists) {
+          return RelationshipState.friends;
+        }
+      }
+
+      // 2. Check for pending outgoing request from current user to other user
       final outgoingQuery = await _firestore
           .collection('friendRequests')
-          .where('senderId', isEqualTo: currentUserId)
-          .where('receiverId', isEqualTo: otherUserId)
-          .where('status', isEqualTo: 'pending')
-          .limit(1)
+          .where('senderUsername', isEqualTo: cUser)
           .get();
 
-      if (outgoingQuery.docs.isNotEmpty) {
+      final hasPendingOut = outgoingQuery.docs.any((d) {
+        final data = d.data();
+        final rUname = (data['receiverUsername'] ?? '').toString().toLowerCase().replaceAll('@', '');
+        return rUname == oUser && data['status'] == 'pending';
+      });
+
+      if (hasPendingOut) {
         return RelationshipState.pendingOutgoing;
       }
 
-      // 3. Check for pending incoming request
+      // 3. Check for pending incoming request from other user to current user
       final incomingQuery = await _firestore
           .collection('friendRequests')
-          .where('senderId', isEqualTo: otherUserId)
-          .where('receiverId', isEqualTo: currentUserId)
-          .where('status', isEqualTo: 'pending')
-          .limit(1)
+          .where('receiverUsername', isEqualTo: cUser)
           .get();
 
-      if (incomingQuery.docs.isNotEmpty) {
+      final hasPendingIn = incomingQuery.docs.any((d) {
+        final data = d.data();
+        final sUname = (data['senderUsername'] ?? '').toString().toLowerCase().replaceAll('@', '');
+        return sUname == oUser && data['status'] == 'pending';
+      });
+
+      if (hasPendingIn) {
         return RelationshipState.pendingIncoming;
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[FriendshipService] getRelationshipState notice: $e');
+    }
 
     return RelationshipState.none;
   }
 
-  /// Send a friend request and dispatch notification
+  /// Send a friend request and dispatch event-driven notification in Firestore
   Future<String> sendFriendRequest(User sender, User receiver) async {
     if (!isFirebaseInitialized) {
       throw Exception('Firebase is not initialized.');
     }
 
-    final existingState = await getRelationshipState(sender.id, receiver.id);
-    if (existingState == RelationshipState.friends) {
-      throw Exception('You are already friends with @${receiver.username}.');
-    }
-    if (existingState == RelationshipState.pendingOutgoing) {
-      throw Exception('Friend request already sent.');
+    final sUser = sender.username.trim().toLowerCase().replaceAll('@', '');
+    final rUser = receiver.username.trim().toLowerCase().replaceAll('@', '');
+
+    if (sUser == rUser) {
+      throw Exception('Cannot send friend request to yourself.');
     }
 
-    final reqRef = _firestore.collection('friendRequests').doc();
+    // Check if already friends
+    final canonicalId = getCanonicalFriendshipId(sUser, rUser);
+    final fDoc = await _firestore.collection('friendships').doc(canonicalId).get();
+    if (fDoc.exists) {
+      throw Exception('You are already friends with @$rUser.');
+    }
+
+    // Deterministic request ID so duplicate clicks never create duplicate documents
+    final reqDocId = '${sUser}_to_$rUser';
+    final reqRef = _firestore.collection('friendRequests').doc(reqDocId);
     final notifRef = _firestore.collection('notifications').doc();
 
     final batch = _firestore.batch();
 
     // 1. Friend Request Document
     batch.set(reqRef, {
-      'id': reqRef.id,
+      'id': reqDocId,
       'senderId': sender.id,
-      'senderUsername': sender.username,
+      'senderUsername': sUser,
       'senderName': sender.name,
       'senderAvatar': sender.avatarUrl,
       'receiverId': receiver.id,
-      'receiverUsername': receiver.username,
+      'receiverUsername': rUser,
       'receiverName': receiver.name,
       'status': 'pending',
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
-    });
+    }, SetOptions(merge: true));
 
-    // 2. Event-Driven Notification for Receiver
+    // 2. Notification for Receiver
     batch.set(notifRef, {
       'recipientId': receiver.id,
+      'recipientUsername': rUser,
       'actorId': sender.id,
+      'actorUsername': sUser,
       'type': 'friend_request',
-      'entityId': reqRef.id,
+      'entityId': reqDocId,
       'title': 'New Friend Request',
-      'message': '${sender.name} (@${sender.username}) wants to connect with you.',
+      'message': '${sender.name} (@$sUser) wants to connect with you.',
       'readAt': null,
       'isRead': false,
       'createdAt': FieldValue.serverTimestamp(),
     });
 
     await batch.commit();
-    return reqRef.id;
-  }
-
-  /// Cancel an outgoing friend request
-  Future<void> cancelFriendRequest(String currentUserId, String otherUserId) async {
-    if (!isFirebaseInitialized) return;
-    final query = await _firestore
-        .collection('friendRequests')
-        .where('senderId', isEqualTo: currentUserId)
-        .where('receiverId', isEqualTo: otherUserId)
-        .where('status', isEqualTo: 'pending')
-        .get();
-
-    final batch = _firestore.batch();
-    for (final doc in query.docs) {
-      batch.update(doc.reference, {
-        'status': 'cancelled',
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-    }
-    await batch.commit();
+    return reqDocId;
   }
 
   /// Accept an incoming friend request
   Future<void> acceptFriendRequest(FriendRequest request, User currentUser) async {
     if (!isFirebaseInitialized) return;
-    final friendshipId = _getSortedFriendshipId(request.senderId, request.receiverId);
-    final friendshipRef = _firestore.collection('friendships').doc(friendshipId);
-    final reqRef = _firestore.collection('friendRequests').doc(request.id);
+
+    final u1 = request.senderUsername.trim().toLowerCase().replaceAll('@', '');
+    final u2 = request.receiverUsername.trim().toLowerCase().replaceAll('@', '');
+    final canonicalFriendshipId = getCanonicalFriendshipId(u1, u2);
+
+    final friendshipRef = _firestore.collection('friendships').doc(canonicalFriendshipId);
     final notifRef = _firestore.collection('notifications').doc();
 
     final batch = _firestore.batch();
 
-    // 1. Update Request status to accepted
-    batch.update(reqRef, {
+    // 1. Update the original request doc by ID if it exists
+    if (request.id.isNotEmpty) {
+      final reqRef = _firestore.collection('friendRequests').doc(request.id);
+      batch.set(reqRef, {
+        'status': 'accepted',
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    }
+
+    // 1b. Also update the deterministic doc ID `${u1}_to_${u2}`
+    final deterministicReqRef = _firestore.collection('friendRequests').doc('${u1}_to_$u2');
+    batch.set(deterministicReqRef, {
       'status': 'accepted',
       'updatedAt': FieldValue.serverTimestamp(),
-    });
+    }, SetOptions(merge: true));
 
-    // 2. Create canonical Friendship record
+    // 2. Canonical Friendship Document
     batch.set(friendshipRef, {
-      'id': friendshipId,
-      'userIds': [request.senderId, request.receiverId],
+      'id': canonicalFriendshipId,
+      'usernames': [u1, u2],
+      'userIds': [request.senderId, currentUser.id],
+      'user1': u1,
+      'user2': u2,
+      'user1Name': request.senderName,
+      'user2Name': currentUser.name,
+      'user1Avatar': request.senderAvatar,
+      'user2Avatar': currentUser.avatarUrl,
       'createdAt': FieldValue.serverTimestamp(),
-    });
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
 
-    // 3. Dispatch Notification to sender
+    // 3. Notification for sender
     batch.set(notifRef, {
       'recipientId': request.senderId,
+      'recipientUsername': u1,
       'actorId': currentUser.id,
+      'actorUsername': currentUser.username,
       'type': 'friend_accept',
-      'entityId': friendshipId,
+      'entityId': canonicalFriendshipId,
       'title': 'Friend Request Accepted! 🎉',
       'message': '${currentUser.name} (@${currentUser.username}) accepted your friend request. You can now chat!',
       'readAt': null,
@@ -179,56 +225,118 @@ class FriendshipService {
   }
 
   /// Decline an incoming friend request
-  Future<void> declineFriendRequest(String requestId) async {
+  Future<void> declineFriendRequest(String requestId, {String? senderUsername, String? receiverUsername}) async {
     if (!isFirebaseInitialized) return;
-    await _firestore.collection('friendRequests').doc(requestId).update({
-      'status': 'declined',
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+
+    try {
+      final batch = _firestore.batch();
+
+      if (requestId.isNotEmpty) {
+        final docRef = _firestore.collection('friendRequests').doc(requestId);
+        batch.set(docRef, {
+          'status': 'declined',
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+
+      if (senderUsername != null && receiverUsername != null) {
+        final sUser = senderUsername.trim().toLowerCase().replaceAll('@', '');
+        final rUser = receiverUsername.trim().toLowerCase().replaceAll('@', '');
+        final detRef = _firestore.collection('friendRequests').doc('${sUser}_to_$rUser');
+        batch.set(detRef, {
+          'status': 'declined',
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+
+      await batch.commit();
+    } catch (e) {
+      debugPrint('[FriendshipService] declineFriendRequest notice: $e');
+    }
+  }
+
+  /// Cancel an outgoing friend request
+  Future<void> cancelFriendRequest(String senderUsername, String receiverUsername) async {
+    if (!isFirebaseInitialized) return;
+    final sUser = senderUsername.trim().toLowerCase().replaceAll('@', '');
+    final rUser = receiverUsername.trim().toLowerCase().replaceAll('@', '');
+
+    try {
+      final docRef = _firestore.collection('friendRequests').doc('${sUser}_to_$rUser');
+      await docRef.set({
+        'status': 'cancelled',
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('[FriendshipService] cancelFriendRequest notice: $e');
+    }
   }
 
   /// Remove a friendship
-  Future<void> removeFriend(String currentUserId, String otherUserId) async {
+  Future<void> removeFriend(String username1, String username2) async {
     if (!isFirebaseInitialized) return;
-    final friendshipId = _getSortedFriendshipId(currentUserId, otherUserId);
-    await _firestore.collection('friendships').doc(friendshipId).delete();
+    final canonicalId = getCanonicalFriendshipId(username1, username2);
+    try {
+      await _firestore.collection('friendships').doc(canonicalId).delete();
+    } catch (e) {
+      debugPrint('[FriendshipService] removeFriend notice: $e');
+    }
   }
 
-  /// Stream pending incoming friend requests for current user
-  Stream<List<FriendRequest>> streamPendingIncomingRequests(String currentUserId) {
+  /// Stream pending incoming friend requests for user by username
+  Stream<List<FriendRequest>> streamPendingIncomingRequests(String username) {
     if (!isFirebaseInitialized) return const Stream.empty();
+    final clean = username.trim().toLowerCase().replaceAll('@', '');
+    if (clean.isEmpty) return const Stream.empty();
+
     return _firestore
         .collection('friendRequests')
-        .where('receiverId', isEqualTo: currentUserId)
-        .where('status', isEqualTo: 'pending')
         .snapshots()
         .map((snap) => snap.docs
             .map((doc) => FriendRequest.fromFirestore(doc.data(), doc.id))
+            .where((r) {
+              final rUname = r.receiverUsername.trim().toLowerCase().replaceAll('@', '');
+              return rUname == clean && r.isPending;
+            })
             .toList());
   }
 
-  /// Stream pending outgoing friend requests for current user
-  Stream<List<FriendRequest>> streamPendingOutgoingRequests(String currentUserId) {
+  /// Stream outgoing friend requests for user by username (includes status updates like declined/accepted)
+  Stream<List<FriendRequest>> streamOutgoingRequests(String username) {
     if (!isFirebaseInitialized) return const Stream.empty();
+    final clean = username.trim().toLowerCase().replaceAll('@', '');
+    if (clean.isEmpty) return const Stream.empty();
+
     return _firestore
         .collection('friendRequests')
-        .where('senderId', isEqualTo: currentUserId)
-        .where('status', isEqualTo: 'pending')
         .snapshots()
         .map((snap) => snap.docs
             .map((doc) => FriendRequest.fromFirestore(doc.data(), doc.id))
+            .where((r) {
+              final sUname = r.senderUsername.trim().toLowerCase().replaceAll('@', '');
+              return sUname == clean;
+            })
             .toList());
   }
 
-  /// Stream friendships for current user
-  Stream<List<Friendship>> streamFriendships(String currentUserId) {
+  /// Stream all friendships for user by username
+  Stream<List<Friendship>> streamFriendships(String username) {
     if (!isFirebaseInitialized) return const Stream.empty();
+    final clean = username.trim().toLowerCase().replaceAll('@', '');
+    if (clean.isEmpty) return const Stream.empty();
+
     return _firestore
         .collection('friendships')
-        .where('userIds', arrayContains: currentUserId)
         .snapshots()
         .map((snap) => snap.docs
             .map((doc) => Friendship.fromFirestore(doc.data(), doc.id))
+            .where((f) {
+              final u1 = f.user1.toLowerCase().replaceAll('@', '').trim();
+              final u2 = f.user2.toLowerCase().replaceAll('@', '').trim();
+              final unames = f.usernames.map((u) => u.toLowerCase().replaceAll('@', '').trim()).toSet();
+              final docId = f.id.toLowerCase().replaceAll('@', '').trim();
+              return u1 == clean || u2 == clean || unames.contains(clean) || docId.contains(clean);
+            })
             .toList());
   }
 }

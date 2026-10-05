@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
 const store = require('./store');
 const User = require('../models/User');
@@ -309,7 +310,7 @@ exports.getUsers = async (req, res) => {
             ],
           }
         : {};
-      const dbUsers = await User.find(filter).select('-password').limit(30);
+      const dbUsers = await User.find(filter).select('-password').limit(300);
       for (const u of dbUsers) {
         const key = (u.username || u._id.toString()).toLowerCase();
         userMap.set(key, {
@@ -353,6 +354,73 @@ exports.getUsers = async (req, res) => {
 
     const safeUsers = Array.from(userMap.values());
     return res.json({ success: true, users: safeUsers });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+exports.updateProfile = async (req, res) => {
+  try {
+    const { id, username, name, campusOrCity, majorOrBio, avatarUrl } = req.body;
+    const cleanUsername = (username || '').trim().toLowerCase().replace(/^@/, '');
+
+    let updatedUser = null;
+
+    if (isConnected()) {
+      let query = {};
+      if (id && mongoose.Types.ObjectId.isValid(id)) {
+        query._id = id;
+      } else if (cleanUsername) {
+        query.username = { $regex: `^${cleanUsername}$`, $options: 'i' };
+      }
+
+      if (Object.keys(query).length > 0) {
+        const user = await User.findOne(query);
+        if (user) {
+          if (name) user.name = name.trim();
+          if (campusOrCity) user.campusOrCity = campusOrCity.trim();
+          if (majorOrBio !== undefined) user.majorOrBio = majorOrBio.trim();
+          if (avatarUrl) user.avatarUrl = avatarUrl;
+          await user.save();
+          updatedUser = {
+            id: user._id.toString(),
+            username: user.username,
+            name: user.name,
+            email: user.email,
+            campusOrCity: user.campusOrCity,
+            majorOrBio: user.majorOrBio,
+            reputation: user.reputation,
+            isCollegeVerified: user.isCollegeVerified,
+            joinedCommunityIds: user.joinedCommunityIds,
+            badges: user.badges,
+            avatarUrl: user.avatarUrl || '👤',
+          };
+        }
+      }
+    }
+
+    // Also update in in-memory store
+    const storeUser = store.users.find(
+      (u) =>
+        (id && u.id === id) ||
+        (cleanUsername && u.username && u.username.toLowerCase() === cleanUsername)
+    );
+    if (storeUser) {
+      if (name) storeUser.name = name.trim();
+      if (campusOrCity) storeUser.campusOrCity = campusOrCity.trim();
+      if (majorOrBio !== undefined) storeUser.majorOrBio = majorOrBio.trim();
+      if (avatarUrl) storeUser.avatarUrl = avatarUrl;
+      if (!updatedUser) {
+        const { password, ...safe } = storeUser;
+        updatedUser = safe;
+      }
+    }
+
+    if (!updatedUser) {
+      return res.status(404).json({ success: false, message: 'User not found to update' });
+    }
+
+    return res.json({ success: true, user: updatedUser });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
   }

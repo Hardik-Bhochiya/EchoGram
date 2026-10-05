@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
-import '../../providers/community_provider.dart';
 import '../../services/local_store_service.dart';
 import '../auth/login_screen.dart';
 
@@ -187,7 +186,7 @@ class ProfileScreen extends StatelessWidget {
               ),
               const SizedBox(height: 20),
               ElevatedButton(
-                onPressed: () {
+                onPressed: () async {
                   final newName = nameCtrl.text.trim();
                   final newLoc = locationCtrl.text.trim();
                   final newBio = bioCtrl.text.trim();
@@ -197,19 +196,23 @@ class ProfileScreen extends StatelessWidget {
                     LocalStoreService().addLocation(newLoc);
                   }
 
-                  context.read<AuthProvider>().updateProfile(
+                  await context.read<AuthProvider>().updateProfile(
                     name: newName.isNotEmpty ? newName : user.name,
                     campusOrCity: newLoc.isNotEmpty ? newLoc : user.campusOrCity,
                     majorOrBio: newBio,
                     avatarUrl: selectedAvatar,
                   );
-                  Navigator.pop(ctx);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Profile updated successfully!'),
-                      backgroundColor: Color(0xFF238636),
-                    ),
-                  );
+                  if (ctx.mounted) {
+                    Navigator.pop(ctx);
+                  }
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Profile updated successfully!'),
+                        backgroundColor: Color(0xFF238636),
+                      ),
+                    );
+                  }
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF238636),
@@ -230,9 +233,6 @@ class ProfileScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final user = auth.currentUser;
-    final communityProvider = context.watch<CommunityProvider>();
-    final joinedCommunitiesCount = communityProvider.joinedCommunities.length;
-    final friendsCount = auth.getFriends().length;
 
     if (user == null) {
       return Scaffold(
@@ -276,20 +276,6 @@ class ProfileScreen extends StatelessWidget {
           'Profile',
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFFF0F6FC)),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout_rounded, color: Color(0xFFF85149), size: 20),
-            tooltip: 'Sign Out',
-            onPressed: () async {
-              await auth.logout();
-              if (context.mounted) {
-                Navigator.of(context).pushReplacement(
-                  MaterialPageRoute(builder: (_) => const LoginScreen()),
-                );
-              }
-            },
-          ),
-        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
@@ -327,13 +313,25 @@ class ProfileScreen extends StatelessWidget {
               user.handle,
               style: const TextStyle(fontSize: 14, color: Color(0xFF58A6FF), fontWeight: FontWeight.w600),
             ),
+            // 4. College / Location
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.location_on_outlined, size: 15, color: Color(0xFF58A6FF)),
+                const SizedBox(width: 5),
+                Text(
+                  user.campusOrCity.isNotEmpty ? user.campusOrCity : 'DDU, Nadiad',
+                  style: const TextStyle(fontSize: 13.5, color: Color(0xFF8B949E), fontWeight: FontWeight.w500),
+                ),
+              ],
+            ),
             const SizedBox(height: 14),
 
-            // 4. Bio
-            if (user.majorOrBio != null && user.majorOrBio!.isNotEmpty)
+            // 5. Bio
+            if (user.majorOrBio != null && user.majorOrBio!.isNotEmpty) ...[
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(14),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
                   color: const Color(0xFF161B22),
                   borderRadius: BorderRadius.circular(12),
@@ -345,23 +343,12 @@ class ProfileScreen extends StatelessWidget {
                   textAlign: TextAlign.center,
                 ),
               ),
-            const SizedBox(height: 12),
+              const SizedBox(height: 20),
+            ] else ...[
+              const SizedBox(height: 10),
+            ],
 
-            // 5. College / Location
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.location_on_outlined, size: 15, color: Color(0xFF8B949E)),
-                const SizedBox(width: 5),
-                Text(
-                  user.campusOrCity.isNotEmpty ? user.campusOrCity : 'DDU, Nadiad',
-                  style: const TextStyle(fontSize: 13.5, color: Color(0xFF8B949E)),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-
-            // 6. [Edit Profile] Button
+            // 6. Edit Profile Button
             SizedBox(
               width: double.infinity,
               height: 44,
@@ -376,75 +363,18 @@ class ProfileScreen extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 12),
 
-            const Divider(color: Color(0xFF30363D)),
-            const SizedBox(height: 18),
-
-            // 7. Summary counters: Friends & Communities
-            Row(
-              children: [
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF161B22),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFF30363D)),
-                    ),
-                    child: Column(
-                      children: [
-                        Text(
-                          '$friendsCount',
-                          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFFF0F6FC)),
-                        ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'Friends',
-                          style: TextStyle(fontSize: 12, color: Color(0xFF8B949E), fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF161B22),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFF30363D)),
-                    ),
-                    child: Column(
-                      children: [
-                        Text(
-                          '$joinedCommunitiesCount',
-                          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFFF0F6FC)),
-                        ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'Communities',
-                          style: TextStyle(fontSize: 12, color: Color(0xFF8B949E), fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 32),
-
-            // 8. Sign Out button
+            // 7. Logout Button
             SizedBox(
               width: double.infinity,
-              height: 48,
+              height: 44,
               child: ElevatedButton.icon(
                 onPressed: () => _confirmSignOut(context, auth),
                 icon: const Icon(Icons.logout_rounded, color: Colors.white, size: 18),
                 label: const Text(
-                  'Sign Out',
-                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14.5),
+                  'Log Out',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFDA3633),

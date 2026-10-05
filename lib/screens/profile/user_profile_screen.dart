@@ -77,7 +77,12 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     // 2. Fallback check with Firebase Firestore if active
     if (_friendshipService.isFirebaseInitialized) {
       try {
-        final state = await _friendshipService.getRelationshipState(currentUser.id, widget.user.id);
+        final state = await _friendshipService.getRelationshipState(
+          currentUsername: currentUser.username,
+          currentUserId: currentUser.id,
+          otherUsername: widget.user.username,
+          otherUserId: widget.user.id,
+        );
         if (mounted) {
           setState(() {
             _relationshipState = state;
@@ -174,12 +179,11 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     try {
       final incoming = auth.getIncomingRequestFrom(widget.user.username);
       if (incoming != null) {
-        await auth.respondFriendRequest(incoming.id, 'accepted');
-        if (_friendshipService.isFirebaseInitialized) {
-          try {
-            await _friendshipService.acceptFriendRequest(incoming, currentUser);
-          } catch (_) {}
-        }
+        await auth.respondFriendRequest(
+          incoming.id,
+          'accepted',
+          senderUsername: incoming.senderUsername,
+        );
       }
 
       if (mounted) {
@@ -205,12 +209,11 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     try {
       final incoming = auth.getIncomingRequestFrom(widget.user.username);
       if (incoming != null) {
-        await auth.respondFriendRequest(incoming.id, 'declined');
-        if (_friendshipService.isFirebaseInitialized) {
-          try {
-            await _friendshipService.declineFriendRequest(incoming.id);
-          } catch (_) {}
-        }
+        await auth.respondFriendRequest(
+          incoming.id,
+          'declined',
+          senderUsername: incoming.senderUsername,
+        );
       }
       if (mounted) {
         setState(() {
@@ -541,10 +544,10 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
             Expanded(
               child: OutlinedButton.icon(
                 onPressed: _handleDeclineRequest,
-                icon: const Icon(Icons.close_rounded, size: 18, color: Color(0xFF8B949E)),
-                label: const Text('Decline', style: TextStyle(color: Color(0xFF8B949E))),
+                icon: const Icon(Icons.close_rounded, size: 18, color: Color(0xFFF85149)),
+                label: const Text('Reject', style: TextStyle(color: Color(0xFFF85149), fontWeight: FontWeight.bold)),
                 style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Color(0xFF30363D)),
+                  side: const BorderSide(color: Color(0xFFDA3633)),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
               ),

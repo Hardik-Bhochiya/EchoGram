@@ -7,6 +7,8 @@ class ChatBubble extends StatelessWidget {
   final ChatMessage message;
   final bool showSenderName;
   final String currentUserId;
+  final VoidCallback? onLike;
+  final VoidCallback? onDislike;
   final Function(bool deleteForEveryone)? onDelete;
 
   const ChatBubble({
@@ -14,6 +16,8 @@ class ChatBubble extends StatelessWidget {
     required this.message,
     this.showSenderName = true,
     this.currentUserId = '',
+    this.onLike,
+    this.onDislike,
     this.onDelete,
   });
 
@@ -74,20 +78,20 @@ class ChatBubble extends StatelessWidget {
     if (message.status == 'seen') {
       return const Icon(
         Icons.done_all_rounded,
-        size: 14,
-        color: Color(0xFF58A6FF), // Blue seen ticks
+        size: 15,
+        color: Color(0xFF58A6FF), // WhatsApp-style blue double tick
       );
     } else if (message.status == 'delivered') {
       return const Icon(
         Icons.done_all_rounded,
-        size: 14,
-        color: Color(0xFF8B949E), // Grey delivered double tick
+        size: 15,
+        color: Color(0xFF8B949E), // WhatsApp-style grey delivered double tick
       );
     } else {
       return const Icon(
         Icons.done_rounded,
-        size: 14,
-        color: Color(0xFF8B949E), // Grey sent single tick
+        size: 15,
+        color: Color(0xFF8B949E), // WhatsApp-style grey sent single tick
       );
     }
   }
@@ -98,8 +102,13 @@ class ChatBubble extends StatelessWidget {
     final isDeleted = message.isDeleted;
     final timeStr = DateFormat('hh:mm a').format(message.timestamp);
 
+    final hasLiked = message.likes.contains(currentUserId);
+    final hasDisliked = message.dislikes.contains(currentUserId);
+    final likeCount = message.likes.length;
+    final dislikeCount = message.dislikes.length;
+
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         mainAxisAlignment: isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
@@ -123,8 +132,8 @@ class ChatBubble extends StatelessWidget {
             child: GestureDetector(
               onLongPress: () => _showContextMenu(context),
               child: Container(
-                constraints: const BoxConstraints(maxWidth: 300),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                constraints: const BoxConstraints(maxWidth: 310),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
                 decoration: BoxDecoration(
                   color: isDeleted
                       ? const Color(0xFF161B22)
@@ -149,12 +158,12 @@ class ChatBubble extends StatelessWidget {
                       Text(
                         message.senderName,
                         style: const TextStyle(
-                          fontSize: 11,
+                          fontSize: 11.5,
                           fontWeight: FontWeight.bold,
                           color: Color(0xFF58A6FF),
                         ),
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 3),
                     ],
 
                     if (isDeleted)
@@ -166,33 +175,131 @@ class ChatBubble extends StatelessWidget {
                           color: Color(0xFF8B949E),
                         ),
                       )
-                    else
+                    else ...[
                       Text(
                         message.content,
                         style: const TextStyle(
-                          fontSize: 14,
+                          fontSize: 14.5,
                           color: Color(0xFFF0F6FC),
                           height: 1.35,
                         ),
                       ),
 
-                    const SizedBox(height: 3),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          timeStr,
-                          style: const TextStyle(
-                            fontSize: 10,
-                            color: Color(0xFF8B949E),
+                      const SizedBox(height: 6),
+
+                      // WhatsApp-style reactions (Like & Dislike with counters) and Timestamp Row
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          // Like and Dislike buttons & counters under message
+                          Wrap(
+                            spacing: 6,
+                            children: [
+                              // Like button & counter
+                              InkWell(
+                                onTap: onLike,
+                                borderRadius: BorderRadius.circular(12),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: hasLiked
+                                        ? (isMine ? const Color(0xFF1158C7) : const Color(0xFF30363D))
+                                        : Colors.black.withAlpha(46),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                      color: hasLiked ? const Color(0xFF58A6FF) : Colors.transparent,
+                                      width: 0.8,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        hasLiked ? Icons.thumb_up_rounded : Icons.thumb_up_outlined,
+                                        size: 13,
+                                        color: hasLiked ? const Color(0xFF58A6FF) : const Color(0xFF8B949E),
+                                      ),
+                                      if (likeCount > 0) ...[
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          '$likeCount',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                            color: hasLiked ? const Color(0xFF58A6FF) : const Color(0xFFC9D1D9),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ),
+
+                              // Dislike button & counter
+                              InkWell(
+                                onTap: onDislike,
+                                borderRadius: BorderRadius.circular(12),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: hasDisliked
+                                        ? (isMine ? const Color(0xFF8B1D1D) : const Color(0xFF3E1F24))
+                                        : Colors.black.withAlpha(46),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                      color: hasDisliked ? const Color(0xFFF85149) : Colors.transparent,
+                                      width: 0.8,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        hasDisliked ? Icons.thumb_down_rounded : Icons.thumb_down_outlined,
+                                        size: 13,
+                                        color: hasDisliked ? const Color(0xFFF85149) : const Color(0xFF8B949E),
+                                      ),
+                                      if (dislikeCount > 0) ...[
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          '$dislikeCount',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                            color: hasDisliked ? const Color(0xFFF85149) : const Color(0xFFC9D1D9),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                        if (isMine && !isDeleted) ...[
-                          const SizedBox(width: 4),
-                          _buildSeenIndicator(),
+
+                          const SizedBox(width: 12),
+
+                          // Time and WhatsApp ticks
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                timeStr,
+                                style: const TextStyle(
+                                  fontSize: 10.5,
+                                  color: Color(0xFF8B949E),
+                                ),
+                              ),
+                              if (isMine) ...[
+                                const SizedBox(width: 4),
+                                _buildSeenIndicator(),
+                              ],
+                            ],
+                          ),
                         ],
-                      ],
-                    ),
+                      ),
+                    ],
                   ],
                 ),
               ),

@@ -12,6 +12,7 @@ const userSchema = new mongoose.Schema({
   joinedCommunityIds: [{ type: String }],
   badges: [{ type: String }],
   isCollegeVerified: { type: Boolean, default: false },
+  avatarUrl: { type: String, default: '👤' },
 }, { timestamps: true });
 
 userSchema.pre('save', async function (next) {

@@ -142,15 +142,12 @@ exports.respondFriendRequest = async (req, res) => {
       return res.status(404).json({ error: 'Friend request not found' });
     }
 
-    reqObj.status = status; // 'accepted' or 'declined'
-    if (reqObj.save) {
-      await reqObj.save();
-    }
-
-    const u1 = (senderUsername || reqObj.senderUsername).toLowerCase().replaceAll('@', '');
-    const u2 = (receiverUsername || reqObj.receiverUsername).toLowerCase().replaceAll('@', '');
-
     if (status === 'accepted') {
+      reqObj.status = 'accepted';
+      if (reqObj.save) {
+        await reqObj.save();
+      }
+
       // Add friendship to DB
       if (isConnected()) {
         try {
@@ -186,6 +183,28 @@ exports.respondFriendRequest = async (req, res) => {
       emitSocketEvent(req, 'friend_request_accepted', `user-${u2}`, {
         requestId,
         status: 'accepted',
+        senderUsername: u1,
+        receiverUsername: u2,
+      });
+    } else {
+      // Rejection / Decline: completely remove pending request so sender can request again
+      if (isConnected()) {
+        try {
+          await FriendRequest.deleteOne({ id: requestId });
+        } catch (_) {}
+      }
+      store.friendRequests = store.friendRequests.filter((r) => r.id !== requestId);
+
+      // Emit declined event to both parties
+      emitSocketEvent(req, 'friend_request_declined', `user-${u1}`, {
+        requestId,
+        status: 'declined',
+        senderUsername: u1,
+        receiverUsername: u2,
+      });
+      emitSocketEvent(req, 'friend_request_declined', `user-${u2}`, {
+        requestId,
+        status: 'declined',
         senderUsername: u1,
         receiverUsername: u2,
       });

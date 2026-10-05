@@ -26,6 +26,7 @@ class LocalStoreService {
   static const String _keyLocations = 'nt_local_locations_v2';
   static const String _keyUsers = 'nt_local_users_v2';
   static const String _keyCustomBackendUrl = 'nt_custom_backend_url';
+  static const String _keyWipeVersion = 'nt_db_wiped_v5';
 
   bool _initialized = false;
   List<Question> _questions = [];
@@ -47,27 +48,58 @@ class LocalStoreService {
     try {
       final prefs = await SharedPreferences.getInstance();
 
+      // One-time complete database & account wipe requested by user
+      if (!prefs.containsKey(_keyWipeVersion)) {
+        await prefs.clear();
+        await prefs.setBool(_keyWipeVersion, true);
+        _questions = [];
+        _communities = [];
+        _chatRooms = [];
+        _messages = {};
+        _friendRequests = [];
+        _userFriends = {};
+        _users = [];
+        _locations = ['DDU Nadiad', 'Nadiad', 'Ahmedabad', 'Vadodara', 'Gandhinagar'];
+        _initialized = true;
+        debugPrint('[LocalStore] All accounts and local caches cleanly wiped.');
+        return;
+      }
+
       // 1. Load Custom Server URL
       _customBackendUrl = prefs.getString(_keyCustomBackendUrl);
 
-      // 2. Load Questions
+      // 2. Load Questions - only user created questions
       final qStr = prefs.getString(_keyQuestions);
       if (qStr != null && qStr.isNotEmpty) {
         final list = jsonDecode(qStr) as List<dynamic>;
-        _questions = list.map((item) => Question.fromJson(item as Map<String, dynamic>)).toList();
+        _questions = list
+            .map((item) => Question.fromJson(item as Map<String, dynamic>))
+            .where((q) => !q.id.startsWith('q') && !q.communityId.startsWith('c'))
+            .toList();
       } else {
         _questions = [];
-        _persistQuestions();
       }
+      _persistQuestions();
 
-      // 3. Load Communities (User-created communities only, purge fake mock communities)
+      // 3. Load Communities - User-created communities only, purge mock communities
       final cStr = prefs.getString(_keyCommunities);
       if (cStr != null && cStr.isNotEmpty) {
         final list = jsonDecode(cStr) as List<dynamic>;
-        _communities = list
-            .map((item) => Community.fromJson(item as Map<String, dynamic>))
-            .where((c) => !c.id.startsWith('c') && c.memberCount < 100 && !c.name.toLowerCase().contains('canteen') && !c.name.toLowerCase().contains('mumbai'))
-            .toList();
+        final Map<String, Community> unique = {};
+        for (final item in list) {
+          final c = Community.fromJson(item as Map<String, dynamic>);
+          final cName = c.name.toLowerCase();
+          if (!c.id.startsWith('c') &&
+              !cName.contains('canteen') &&
+              !cName.contains('mumbai') &&
+              !cName.contains('robotics') &&
+              !cName.contains('hostel') &&
+              !cName.contains('official') &&
+              c.creatorId != 'rahul123') {
+            unique[c.id] = c;
+          }
+        }
+        _communities = unique.values.toList();
       } else {
         _communities = [];
       }
@@ -86,26 +118,50 @@ class LocalStoreService {
         _persistLocations();
       }
 
-      // 5. Load Registered Users
+      // 5. Load Registered Users - purge fake dummy users
       final uStr = prefs.getString(_keyUsers);
       if (uStr != null && uStr.isNotEmpty) {
         final list = jsonDecode(uStr) as List<dynamic>;
-        _users = list.map((item) => User.fromJson(item as Map<String, dynamic>)).toList();
+        _users = list
+            .map((item) => User.fromJson(item as Map<String, dynamic>))
+            .where((u) => u.username.toLowerCase() != 'rahul123' && u.id != 'user-rahul')
+            .toList();
       } else {
         _users = [];
       }
+      _persistUsers();
 
-      // 6. Load Chat Rooms
+      // 6. Load Chat Rooms - purge all dummy chat rooms completely
       final rStr = prefs.getString(_keyChatRooms);
       if (rStr != null && rStr.isNotEmpty) {
         final list = jsonDecode(rStr) as List<dynamic>;
-        _chatRooms = list.map((item) => ChatRoom.fromJson(item as Map<String, dynamic>)).toList();
+        _chatRooms = list
+            .map((item) => ChatRoom.fromJson(item as Map<String, dynamic>))
+            .where((r) {
+              final t = r.title.toLowerCase();
+              final s = r.subtitle?.toLowerCase() ?? '';
+              final id = r.id.toLowerCase();
+              if (t.contains('rahul') ||
+                  t.contains('canteen') ||
+                  t.contains('mumbai developer') ||
+                  t.contains('hostel group') ||
+                  t.contains('official chat') ||
+                  t.contains('robotics') ||
+                  s.contains('rahul') ||
+                  id.startsWith('room-c') ||
+                  id.contains('rahul')) {
+                return false;
+              }
+              return true;
+            })
+            .toList();
+        _persistChatRooms();
       } else {
         _chatRooms = [];
         _persistChatRooms();
       }
 
-      // 5. Load Chat Messages
+      // 7. Load Chat Messages
       final mStr = prefs.getString(_keyChatMessages);
       if (mStr != null && mStr.isNotEmpty) {
         final map = jsonDecode(mStr) as Map<String, dynamic>;
@@ -115,30 +171,42 @@ class LocalStoreService {
               .toList();
           return MapEntry(roomId, msgs);
         });
+        _messages.removeWhere((roomId, _) =>
+            roomId.startsWith('room-c') ||
+            roomId.contains('rahul') ||
+            roomId.contains('canteen'));
+        _persistMessages();
       } else {
         _messages = {};
         _persistMessages();
       }
 
-      // 6. Load Friend Requests
+      // 8. Load Friend Requests - purge dummy user requests
       final frStr = prefs.getString(_keyFriendRequests);
       if (frStr != null && frStr.isNotEmpty) {
         final list = jsonDecode(frStr) as List<dynamic>;
-        _friendRequests = list.map((item) => FriendRequest.fromJson(item as Map<String, dynamic>)).toList();
+        _friendRequests = list
+            .map((item) => FriendRequest.fromJson(item as Map<String, dynamic>))
+            .where((r) =>
+                r.senderUsername.toLowerCase() != 'rahul123' &&
+                r.receiverUsername.toLowerCase() != 'rahul123')
+            .toList();
       } else {
         _friendRequests = [];
-        _persistFriendRequests();
       }
+      _persistFriendRequests();
 
-      // 7. Load User Friends
+      // 9. Load User Friends - purge dummy friends
       final ufStr = prefs.getString(_keyUserFriends);
       if (ufStr != null && ufStr.isNotEmpty) {
         final map = jsonDecode(ufStr) as Map<String, dynamic>;
         _userFriends = map.map((k, v) => MapEntry(k, List<String>.from(v as List<dynamic>)));
+        _userFriends.remove('rahul123');
+        _userFriends.forEach((_, v) => v.remove('rahul123'));
       } else {
         _userFriends = {};
-        _persistUserFriends();
       }
+      _persistUserFriends();
 
       _initialized = true;
       debugPrint('[LocalStore] Initialized successfully with offline persistence.');
@@ -232,7 +300,14 @@ class LocalStoreService {
 
   // --- Communities ---
 
-  List<Community> getCommunities() => List<Community>.from(_communities);
+  List<Community> getCommunities() {
+    final Map<String, Community> unique = {};
+    for (final c in _communities) {
+      unique[c.id] = c;
+    }
+    _communities = unique.values.toList();
+    return List<Community>.from(_communities);
+  }
 
   Community? getCommunityById(String id) {
     try {
@@ -243,7 +318,12 @@ class LocalStoreService {
   }
 
   void addCommunity(Community community) {
-    _communities.insert(0, community);
+    final idx = _communities.indexWhere((c) => c.id == community.id);
+    if (idx != -1) {
+      _communities[idx] = community;
+    } else {
+      _communities.insert(0, community);
+    }
     _persistCommunities();
   }
 
@@ -292,14 +372,59 @@ class LocalStoreService {
   List<ChatRoom> getChatRooms() => List<ChatRoom>.from(_chatRooms);
 
   List<ChatMessage> getMessages(String roomId) {
-    return List<ChatMessage>.from(_messages[roomId] ?? []);
+    final list = _messages[roomId] ?? [];
+    return _deduplicateMessages(list);
+  }
+
+  List<ChatMessage> _deduplicateMessages(List<ChatMessage> list) {
+    final List<ChatMessage> unique = [];
+    for (final m in list) {
+      final sContent = m.content.trim();
+      final hasDup = unique.any((u) =>
+          u.id == m.id ||
+          (u.senderId == m.senderId &&
+              u.content.trim() == sContent &&
+              u.timestamp.difference(m.timestamp).abs().inSeconds < 5));
+      if (!hasDup) {
+        unique.add(m);
+      }
+    }
+    return unique;
   }
 
   void addMessage(ChatMessage message) {
     if (!_messages.containsKey(message.roomId)) {
       _messages[message.roomId] = [];
     }
-    _messages[message.roomId]!.add(message);
+    final roomList = _messages[message.roomId]!;
+    final sContent = message.content.trim();
+
+    // Deduplicate against matching ID OR matching sender + content within 5 seconds
+    final existingIdx = roomList.indexWhere((m) =>
+        m.id == message.id ||
+        (m.senderId == message.senderId &&
+            m.content.trim() == sContent &&
+            m.timestamp.difference(message.timestamp).abs().inSeconds < 5));
+
+    if (existingIdx != -1) {
+      // Merge or update without creating duplicates
+      final cur = roomList[existingIdx];
+      roomList[existingIdx] = cur.copyWith(
+        id: message.id.isNotEmpty ? message.id : cur.id,
+        content: message.content,
+        status: (message.status == 'seen' || cur.status == 'seen')
+            ? 'seen'
+            : (message.status == 'delivered' || cur.status == 'delivered')
+                ? 'delivered'
+                : message.status,
+        likes: message.likes.isNotEmpty ? message.likes : cur.likes,
+        dislikes: message.dislikes.isNotEmpty ? message.dislikes : cur.dislikes,
+        isEdited: message.isEdited || cur.isEdited,
+        isDeleted: message.isDeleted || cur.isDeleted,
+      );
+    } else {
+      roomList.add(message);
+    }
     _persistMessages();
 
     // Update Room's last message
@@ -438,6 +563,11 @@ class LocalStoreService {
   Future<void> _persistCommunities() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      final Map<String, Community> unique = {};
+      for (final c in _communities) {
+        unique[c.id] = c;
+      }
+      _communities = unique.values.toList();
       final jsonList = _communities.map((c) => c.toJson()).toList();
       await prefs.setString(_keyCommunities, jsonEncode(jsonList));
     } catch (e) {
@@ -514,9 +644,33 @@ class LocalStoreService {
     _persistFriendRequests();
   }
 
-  void respondFriendRequest(String requestId, String status) {
-    final idx = _friendRequests.indexWhere((r) => r.id == requestId);
+  void respondFriendRequest(String requestId, String status, {String? senderUsername, String? receiverUsername}) {
+    int idx = _friendRequests.indexWhere((r) => r.id == requestId);
+    if (idx == -1 && requestId.contains('_to_')) {
+      final parts = requestId.split('_to_');
+      if (parts.length == 2) {
+        final s = parts[0].trim().toLowerCase();
+        final rec = parts[1].trim().toLowerCase();
+        idx = _friendRequests.indexWhere((r) =>
+            r.senderUsername.trim().toLowerCase() == s &&
+            r.receiverUsername.trim().toLowerCase() == rec);
+      }
+    }
+    if (idx == -1 && senderUsername != null && receiverUsername != null) {
+      final s = senderUsername.trim().toLowerCase().replaceAll('@', '');
+      final rec = receiverUsername.trim().toLowerCase().replaceAll('@', '');
+      idx = _friendRequests.indexWhere((r) =>
+          (r.senderUsername.trim().toLowerCase() == s && r.receiverUsername.trim().toLowerCase() == rec) ||
+          (r.senderUsername.trim().toLowerCase() == rec && r.receiverUsername.trim().toLowerCase() == s));
+    }
+
     if (idx != -1) {
+      if (status == 'declined' || status == 'rejected') {
+        _friendRequests.removeAt(idx);
+        _persistFriendRequests();
+        return;
+      }
+
       final req = _friendRequests[idx].copyWith(status: status);
       _friendRequests[idx] = req;
 
@@ -590,7 +744,9 @@ class LocalStoreService {
 
   // --- Registered Users ---
 
-  List<User> getRegisteredUsers() => List.unmodifiable(_users);
+  List<User> getRegisteredUsers() {
+    return List<User>.from(_users);
+  }
 
   bool isUsernameTaken(String username) {
     final clean = username.trim().toLowerCase().replaceAll('@', '');
@@ -615,8 +771,8 @@ class LocalStoreService {
     if (clean.isEmpty) return [];
     return _users.where((u) {
       if (excludeUserId != null && u.id == excludeUserId) return false;
-      return u.username.toLowerCase().contains(clean) ||
-             u.name.toLowerCase().contains(clean);
+      final uname = u.username.toLowerCase().replaceAll('@', '').trim();
+      return uname.contains(clean) || u.name.toLowerCase().contains(clean);
     }).toList();
   }
 

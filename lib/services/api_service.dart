@@ -286,6 +286,42 @@ class ApiService {
     }
   }
 
+  // Auth: Update Profile
+  Future<User?> updateProfile({
+    String? id,
+    String? username,
+    required String name,
+    required String campusOrCity,
+    required String majorOrBio,
+    String? avatarUrl,
+  }) async {
+    try {
+      final response = await http
+          .put(
+            Uri.parse('$baseUrl/auth/profile'),
+            headers: _headers,
+            body: jsonEncode({
+              if (id != null) 'id': id,
+              if (username != null) 'username': username,
+              'name': name.trim(),
+              'campusOrCity': campusOrCity.trim(),
+              'majorOrBio': majorOrBio.trim(),
+              if (avatarUrl != null) 'avatarUrl': avatarUrl,
+            }),
+          )
+          .timeout(const Duration(seconds: 4));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['user'] != null) {
+          _isServerReachable = true;
+          return User.fromJson(data['user']);
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
   // Friends: Get Requests
   Future<List<Map<String, dynamic>>> getFriendRequests(String username) async {
     final clean = username.trim().toLowerCase().replaceAll('@', '');

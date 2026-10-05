@@ -24,6 +24,7 @@ class SocketService {
   final _seenController = StreamController<Map<String, dynamic>>.broadcast();
   final _friendRequestReceivedController = StreamController<Map<String, dynamic>>.broadcast();
   final _friendRequestAcceptedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _friendRequestDeclinedController = StreamController<Map<String, dynamic>>.broadcast();
 
   Stream<ChatMessage> get onMessageReceived => _messageController.stream;
   Stream<Map<String, dynamic>> get onTypingStatus => _typingController.stream;
@@ -34,6 +35,7 @@ class SocketService {
   Stream<Map<String, dynamic>> get onMessageSeen => _seenController.stream;
   Stream<Map<String, dynamic>> get onFriendRequestReceived => _friendRequestReceivedController.stream;
   Stream<Map<String, dynamic>> get onFriendRequestAccepted => _friendRequestAcceptedController.stream;
+  Stream<Map<String, dynamic>> get onFriendRequestDeclined => _friendRequestDeclinedController.stream;
 
   bool get isConnected => _isConnected;
 
@@ -146,6 +148,12 @@ class SocketService {
       _socket?.on('friend_request_accepted', (data) {
         if (data != null && data is Map<String, dynamic>) {
           _friendRequestAcceptedController.add(Map<String, dynamic>.from(data));
+        }
+      });
+
+      _socket?.on('friend_request_declined', (data) {
+        if (data != null && data is Map<String, dynamic>) {
+          _friendRequestDeclinedController.add(Map<String, dynamic>.from(data));
         }
       });
     } catch (e) {

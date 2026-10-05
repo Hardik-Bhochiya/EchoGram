@@ -160,12 +160,18 @@ const registerChatSocket = (io) => {
     });
 
     socket.on('respond_friend_request', (data) => {
-      const { senderUsername, status } = data;
-      if (senderUsername && status === 'accepted') {
-        const sChannel = `user-${senderUsername.toLowerCase().replaceAll('@', '')}`;
-        chatNamespace.to(sChannel).emit('friend_request_accepted', data);
-        console.log(`[Socket.IO] Broadcasted friend request accepted to ${sChannel}`);
+      const { senderUsername, receiverUsername, status } = data;
+      const sUser = (senderUsername || '').toLowerCase().replaceAll('@', '');
+      const rUser = (receiverUsername || '').toLowerCase().replaceAll('@', '');
+      const eventName = status === 'accepted' ? 'friend_request_accepted' : 'friend_request_declined';
+
+      if (sUser) {
+        chatNamespace.to(`user-${sUser}`).emit(eventName, data);
       }
+      if (rUser) {
+        chatNamespace.to(`user-${rUser}`).emit(eventName, data);
+      }
+      console.log(`[Socket.IO] Broadcasted ${eventName} to user-${sUser} & user-${rUser}`);
     });
 
     socket.on('disconnect', () => {

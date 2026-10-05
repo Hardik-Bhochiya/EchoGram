@@ -75,6 +75,13 @@ void main() {
 
     test('ChatProvider starts personal chat, edits message, and toggles like/dislike', () {
       final chatProvider = ChatProvider();
+      const me = User(
+        id: 'user-hardik',
+        username: 'hardik_07',
+        name: 'Hardik Bhochiya',
+        email: 'hardik@gmail.com',
+        campusOrCity: 'Mumbai',
+      );
       const peer = User(
         id: 'user-rahul',
         username: 'rahul123',
@@ -86,7 +93,7 @@ void main() {
       // 1. Start Personal Chat by Username
       final room = chatProvider.startPersonalChat(
         peerUser: peer,
-        currentUser: MockDataService.currentUser,
+        currentUser: me,
       );
       expect(room.id, 'dm-hardik_07_rahul123');
 
@@ -94,13 +101,13 @@ void main() {
       chatProvider.sendMessage(
         roomId: room.id,
         content: 'Hey Rahul, let us meet in Mumbai.',
-        currentUser: MockDataService.currentUser,
+        currentUser: me,
       );
 
       final msgs = chatProvider.getMessages(room.id);
       expect(msgs.length, 1);
       final msg = msgs.first;
-      expect(msg.status, 'seen');
+      expect(msg.status, 'sent');
 
       // 3. Edit Message
       chatProvider.editMessage(room.id, msg.id, 'Hey Rahul, let us meet in Mumbai at 4 PM.');
@@ -138,6 +145,13 @@ void main() {
 
     test('AuthProvider friend request lifecycle: send, pending status, and accept friendship', () async {
       final auth = AuthProvider();
+      auth.setCurrentUserForTesting(const User(
+        id: 'user-hardik',
+        username: 'hardik_07',
+        name: 'Hardik Bhochiya',
+        email: 'hardik@gmail.com',
+        campusOrCity: 'Mumbai',
+      ));
 
       // Send friend request to devshah
       final sent = await auth.sendFriendRequest('devshah');

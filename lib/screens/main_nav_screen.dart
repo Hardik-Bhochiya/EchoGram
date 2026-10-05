@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'home/home_screen.dart';
-import 'people/people_screen.dart';
-import 'chat/chat_list_screen.dart';
 import 'community/communities_screen.dart';
+import 'search/search_screen.dart';
+import 'chat/chat_list_screen.dart';
 import 'profile/profile_screen.dart';
+import '../providers/chat_provider.dart';
 
 class MainNavScreen extends StatefulWidget {
   const MainNavScreen({super.key});
@@ -17,9 +19,9 @@ class _MainNavScreenState extends State<MainNavScreen> {
 
   final List<Widget> _screens = const [
     HomeScreen(),
-    PeopleScreen(),
-    ChatListScreen(),
     CommunitiesScreen(),
+    SearchScreen(),
+    ChatListScreen(),
     ProfileScreen(),
   ];
 
@@ -27,6 +29,9 @@ class _MainNavScreenState extends State<MainNavScreen> {
   Widget build(BuildContext context) {
     const activeColor = Color(0xFF58A6FF); // GitHub Blue
     const inactiveColor = Color(0xFF8B949E); // GitHub Muted Gray
+
+    final chatProvider = context.watch<ChatProvider>();
+    final totalUnreadChat = chatProvider.rooms.fold<int>(0, (sum, r) => sum + r.unreadCount);
 
     return Scaffold(
       body: IndexedStack(
@@ -59,36 +64,37 @@ class _MainNavScreenState extends State<MainNavScreen> {
                   inactiveColor: inactiveColor,
                 ),
               ),
-              // 2. People
+              // 2. Groups
               Expanded(
                 child: _buildNavItem(
-                  icon: Icons.people_outline_rounded,
-                  selectedIcon: Icons.people_rounded,
-                  label: 'People',
+                  icon: Icons.groups_outlined,
+                  selectedIcon: Icons.groups_rounded,
+                  label: 'Groups',
                   isSelected: _currentIndex == 1,
                   onTap: () => setState(() => _currentIndex = 1),
                   activeColor: activeColor,
                   inactiveColor: inactiveColor,
                 ),
               ),
-              // 3. Chats (Personal + Groups)
+              // 3. Search
               Expanded(
                 child: _buildNavItem(
-                  icon: Icons.chat_bubble_outline_rounded,
-                  selectedIcon: Icons.chat_bubble_rounded,
-                  label: 'Chat',
+                  icon: Icons.search_rounded,
+                  selectedIcon: Icons.search_rounded,
+                  label: 'Search',
                   isSelected: _currentIndex == 2,
                   onTap: () => setState(() => _currentIndex = 2),
                   activeColor: activeColor,
                   inactiveColor: inactiveColor,
                 ),
               ),
-              // 4. Communities
+              // 4. Chats (with message unread indicator)
               Expanded(
                 child: _buildNavItem(
-                  icon: Icons.groups_outlined,
-                  selectedIcon: Icons.groups_rounded,
-                  label: 'Communities',
+                  icon: Icons.chat_bubble_outline_rounded,
+                  selectedIcon: Icons.chat_bubble_rounded,
+                  label: 'Chat',
+                  badgeCount: totalUnreadChat,
                   isSelected: _currentIndex == 3,
                   onTap: () => setState(() => _currentIndex = 3),
                   activeColor: activeColor,
@@ -122,6 +128,7 @@ class _MainNavScreenState extends State<MainNavScreen> {
     required VoidCallback onTap,
     required Color activeColor,
     required Color inactiveColor,
+    int badgeCount = 0,
   }) {
     return InkWell(
       onTap: onTap,
@@ -131,10 +138,37 @@ class _MainNavScreenState extends State<MainNavScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              isSelected ? (selectedIcon ?? icon) : icon,
-              size: 21,
-              color: isSelected ? activeColor : inactiveColor,
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(
+                  isSelected ? (selectedIcon ?? icon) : icon,
+                  size: 21,
+                  color: isSelected ? activeColor : inactiveColor,
+                ),
+                if (badgeCount > 0)
+                  Positioned(
+                    top: -4,
+                    right: -7,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF85149),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
+                      alignment: Alignment.center,
+                      child: Text(
+                        badgeCount > 99 ? '99+' : '$badgeCount',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 3),
             Text(

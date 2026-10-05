@@ -50,7 +50,9 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
   }
 
   void _confirmDeleteCommunity(Community community) {
-    final currentUserId = context.read<AuthProvider>().currentUser?.id ?? '';
+    final auth = context.read<AuthProvider>();
+    final currentUserId = auth.currentUser?.id ?? '';
+    final currentUsername = auth.currentUser?.username ?? '';
 
     showDialog(
       context: context,
@@ -82,7 +84,11 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
           ElevatedButton(
             onPressed: () {
               Navigator.pop(ctx);
-              final deleted = context.read<CommunityProvider>().deleteCommunity(community.id, currentUserId);
+              final deleted = context.read<CommunityProvider>().deleteCommunity(
+                community.id,
+                currentUserId,
+                currentUsername: currentUsername,
+              );
               if (deleted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
@@ -112,18 +118,18 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
           borderRadius: BorderRadius.circular(16),
           side: const BorderSide(color: Color(0xFF30363D)),
         ),
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.exit_to_app_rounded, color: Color(0xFFE3B341), size: 22),
-            SizedBox(width: 8),
+            const Icon(Icons.exit_to_app_rounded, color: Color(0xFFE3B341), size: 22),
+            const SizedBox(width: 8),
             Text(
-              'Leave Community?',
-              style: TextStyle(color: Color(0xFFF0F6FC), fontSize: 16, fontWeight: FontWeight.bold),
+              'Leave ${community.isGroupType ? 'Group' : 'Community'}?',
+              style: const TextStyle(color: Color(0xFFF0F6FC), fontSize: 16, fontWeight: FontWeight.bold),
             ),
           ],
         ),
         content: Text(
-          'Are you sure you want to leave "${community.name}"? You will stop seeing its updates in My Communities.',
+          'Are you sure you want to leave "${community.name}"?',
           style: const TextStyle(color: Color(0xFF8B949E), fontSize: 13),
         ),
         actions: [
@@ -155,23 +161,17 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
   }
 
   void _showCreateCommunityDialog() {
-    final communityProvider = context.read<CommunityProvider>();
-    final regions = communityProvider.regions;
-    String selectedRegionName = communityProvider.selectedRegion?.name ?? (regions.isNotEmpty ? regions.first.name : 'Nadiad');
-
     final nameController = TextEditingController();
+    final locationController = TextEditingController(text: 'DDU Nadiad, Gujarat');
     final descController = TextEditingController();
-    final customLocationController = TextEditingController();
-    final locationSpotController = TextEditingController();
-    final rule1Controller = TextEditingController();
-    final rule2Controller = TextEditingController();
-    final rule3Controller = TextEditingController();
-    final rule4Controller = TextEditingController();
+    final rulesController = TextEditingController(
+      text: '1. Treat all members with respect and courtesy.\n2. No abusive language, harassment, or hate speech.\n3. No commercial spam or unauthorized promotions.\n4. Keep discussions genuine and relevant.',
+    );
 
+    bool isGroup = _tabController.index == 0;
     String selectedCategory = 'Tech & Dev';
-    String selectedEmoji = '💻';
-    bool isCustomLocation = false;
-    final emojis = ['💻', '📚', '🚀', '📸', '🏏', '🎓', '🎭', '🌊', '🏛️', '⚽'];
+    String selectedEmoji = isGroup ? '👥' : '🏛️';
+    final emojis = ['👥', '💻', '📚', '🚀', '📸', '🏏', '🎓', '🎭', '🏛️', '⚽'];
 
     showModalBottomSheet(
       context: context,
@@ -200,9 +200,9 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
-                          'Create New Community',
-                          style: TextStyle(
+                        Text(
+                          isGroup ? 'Create New Group' : 'Create New Community',
+                          style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
                             color: Color(0xFFF0F6FC),
@@ -214,96 +214,97 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
                         ),
                       ],
                     ),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 12),
 
-                    // City / Location Selection Dropdown & Custom Option
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'City / Location / College',
-                          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF8B949E)),
-                        ),
-                        GestureDetector(
-                          onTap: () {
-                            setModalState(() {
-                              isCustomLocation = !isCustomLocation;
-                            });
-                          },
-                          child: Text(
-                            isCustomLocation ? 'Select from list' : '+ Add New Location',
-                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF58A6FF)),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    if (!isCustomLocation)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF21262D),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: const Color(0xFF30363D)),
-                        ),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            value: regions.any((r) => r.name == selectedRegionName)
-                                ? selectedRegionName
-                                : (regions.isNotEmpty ? regions.first.name : null),
-                            dropdownColor: const Color(0xFF21262D),
-                            style: const TextStyle(color: Color(0xFFF0F6FC), fontSize: 13.5),
-                            isExpanded: true,
-                            items: [
-                              ...regions.map((r) {
-                                return DropdownMenuItem<String>(
-                                  value: r.name,
-                                  child: Row(
-                                    children: [
-                                      Text(r.iconEmoji, style: const TextStyle(fontSize: 16)),
-                                      const SizedBox(width: 8),
-                                      Text(r.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                                    ],
-                                  ),
-                                );
+                    // Type Toggle: Group or Community
+                    Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0D1117),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFF30363D)),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: InkWell(
+                              onTap: () => setModalState(() {
+                                isGroup = true;
+                                selectedEmoji = '👥';
                               }),
-                              const DropdownMenuItem<String>(
-                                value: '__ADD_NEW__',
+                              borderRadius: BorderRadius.circular(9),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: isGroup ? const Color(0xFF21262D) : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(9),
+                                  border: Border.all(
+                                    color: isGroup ? const Color(0xFF58A6FF) : Colors.transparent,
+                                  ),
+                                ),
+                                alignment: Alignment.center,
                                 child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    Icon(Icons.add_location_alt_rounded, color: Color(0xFF238636), size: 16),
-                                    SizedBox(width: 8),
-                                    Text('+ Add New Location / College...', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF238636))),
+                                    Icon(Icons.groups_rounded, size: 16, color: isGroup ? const Color(0xFF58A6FF) : const Color(0xFF8B949E)),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Group',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                        color: isGroup ? const Color(0xFFF0F6FC) : const Color(0xFF8B949E),
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ),
-                            ],
-                            onChanged: (val) {
-                              if (val == '__ADD_NEW__') {
-                                setModalState(() => isCustomLocation = true);
-                              } else if (val != null) {
-                                setModalState(() {
-                                  selectedRegionName = val;
-                                  locationSpotController.text = '$val Hub';
-                                });
-                              }
-                            },
+                            ),
                           ),
-                        ),
-                      )
-                    else
-                      CustomTextField(
-                        controller: customLocationController,
-                        labelText: 'Location / College Name',
-                        hintText: 'e.g. Pune, DDU Nadiad, IIT Bombay',
-                        prefixIcon: Icons.add_location_alt_rounded,
+                          Expanded(
+                            child: InkWell(
+                              onTap: () => setModalState(() {
+                                isGroup = false;
+                                selectedEmoji = '🏛️';
+                              }),
+                              borderRadius: BorderRadius.circular(9),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: !isGroup ? const Color(0xFF21262D) : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(9),
+                                  border: Border.all(
+                                    color: !isGroup ? const Color(0xFF58A6FF) : Colors.transparent,
+                                  ),
+                                ),
+                                alignment: Alignment.center,
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.apartment_rounded, size: 16, color: !isGroup ? const Color(0xFF58A6FF) : const Color(0xFF8B949E)),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Community',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                        color: !isGroup ? const Color(0xFFF0F6FC) : const Color(0xFF8B949E),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
+                    ),
                     const SizedBox(height: 14),
 
-                    // Emoji selector
-                    const Text(
-                      'Choose Icon',
-                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF8B949E)),
+                    // 1. Choose Icon
+                    Text(
+                      '${isGroup ? 'Group' : 'Community'} Icon',
+                      style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF8B949E)),
                     ),
                     const SizedBox(height: 8),
                     Wrap(
@@ -328,29 +329,43 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
                     ),
                     const SizedBox(height: 14),
 
+                    // 2. Name (Text box)
                     CustomTextField(
                       controller: nameController,
-                      labelText: 'Community Name',
-                      hintText: 'e.g. Pune Coders, DDU Robotics Club',
+                      labelText: '${isGroup ? 'Group' : 'Community'} Name',
+                      hintText: isGroup ? 'e.g. Pune Coders, Robotics Club' : 'e.g. DDU Students Community, Ahmedabad Tech',
                     ),
                     const SizedBox(height: 12),
 
+                    // 3. Location (Direct Text box)
                     CustomTextField(
-                      controller: locationSpotController,
-                      labelText: 'Location Spot / Landmark',
-                      hintText: 'e.g. Campus Hub, Main Auditorium',
-                      prefixIcon: Icons.place_rounded,
+                      controller: locationController,
+                      labelText: 'Location',
+                      hintText: 'Enter location (e.g. DDU Nadiad, Ahmedabad, Library)',
+                      prefixIcon: Icons.location_on_outlined,
                     ),
                     const SizedBox(height: 12),
 
+                    // 4. Rules & Regulations (Direct Text box)
+                    CustomTextField(
+                      controller: rulesController,
+                      labelText: 'Rules & Regulations',
+                      hintText: 'Enter rules and regulations (one per line)...',
+                      maxLines: 4,
+                      prefixIcon: Icons.rule_rounded,
+                    ),
+                    const SizedBox(height: 12),
+
+                    // 5. Description (Optional)
                     CustomTextField(
                       controller: descController,
-                      labelText: 'Description',
-                      hintText: 'What is this community about?',
+                      labelText: 'Description (Optional)',
+                      hintText: isGroup ? 'What is this group about?' : 'What is this community about?',
                       maxLines: 2,
                     ),
                     const SizedBox(height: 12),
 
+                    // 6. Category
                     const Text(
                       'Category',
                       style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF8B949E)),
@@ -371,63 +386,58 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
                         if (val != null) setModalState(() => selectedCategory = val);
                       },
                     ),
-                    const SizedBox(height: 14),
-
-                    // Community Rules section
-                    const Text(
-                      'Community Rules',
-                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF8B949E)),
-                    ),
-                    const SizedBox(height: 6),
-                    CustomTextField(controller: rule1Controller, labelText: 'Rule 1', hintText: 'e.g. Respect all members'),
-                    const SizedBox(height: 6),
-                    CustomTextField(controller: rule2Controller, labelText: 'Rule 2', hintText: 'e.g. No spam or promotions'),
-                    const SizedBox(height: 6),
-                    CustomTextField(controller: rule3Controller, labelText: 'Rule 3', hintText: 'e.g. No abusive language'),
-                    const SizedBox(height: 6),
-                    CustomTextField(controller: rule4Controller, labelText: 'Rule 4', hintText: 'e.g. Stay on topic'),
                     const SizedBox(height: 20),
 
                     PrimaryButton(
-                      text: 'Create Community',
+                      text: isGroup ? 'Create Group' : 'Create Community',
                       onPressed: () {
-                        if (nameController.text.trim().isNotEmpty) {
+                        final gName = nameController.text.trim();
+                        final gLoc = locationController.text.trim().isNotEmpty
+                            ? locationController.text.trim()
+                            : 'General';
+
+                        if (gName.isNotEmpty) {
                           final currentUserId = ctx.read<AuthProvider>().currentUser?.id ?? '';
-                          final effectiveLocation = (isCustomLocation && customLocationController.text.trim().isNotEmpty)
-                              ? customLocationController.text.trim()
-                              : selectedRegionName;
 
-                          final spot = locationSpotController.text.trim().isNotEmpty
-                              ? locationSpotController.text.trim()
-                              : '$effectiveLocation Spot';
-
-                          final rules = [
-                            rule1Controller.text.trim(),
-                            rule2Controller.text.trim(),
-                            rule3Controller.text.trim(),
-                            rule4Controller.text.trim(),
-                          ].where((r) => r.isNotEmpty).toList();
+                          final rawRules = rulesController.text.trim();
+                          final rulesList = rawRules.isNotEmpty
+                              ? rawRules
+                                  .split('\n')
+                                  .map((r) => r.trim())
+                                  .where((r) => r.isNotEmpty)
+                                  .toList()
+                              : [
+                                  'Respect all group members.',
+                                  'No spam or promotions.',
+                                  'Keep discussions constructive and safe.',
+                                ];
 
                           final created = ctx.read<CommunityProvider>().createCommunity(
-                            name: nameController.text.trim(),
-                            description: descController.text.trim(),
-                            category: selectedCategory,
+                            name: gName,
+                            description: descController.text.trim().isNotEmpty
+                                ? descController.text.trim()
+                                : '$gName ${isGroup ? 'group' : 'community'} discussions and peer updates',
+                            category: isGroup ? selectedCategory : 'Community',
                             iconEmoji: selectedEmoji,
                             bannerColorHex: 0xFF58A6FF,
-                            regionName: effectiveLocation,
-                            locationSpot: spot,
+                            regionName: gLoc,
+                            locationSpot: gLoc,
                             creatorId: currentUserId,
-                            rules: rules.isNotEmpty ? rules : null,
+                            isGroupType: isGroup,
+                            rules: rulesList,
                           );
+
                           ctx.read<ChatProvider>().getOrCreateCommunityRoom(
                             created.id,
                             created.name,
                             created.iconEmoji,
                           );
+
                           Navigator.pop(ctx);
+                          _tabController.animateTo(isGroup ? 0 : 1);
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text('Created "${nameController.text.trim()}" in $effectiveLocation! 🎉'),
+                              content: Text('Created ${isGroup ? 'group' : 'community'} "$gName" in $gLoc! 🎉'),
                               backgroundColor: const Color(0xFF238636),
                             ),
                           );
@@ -450,18 +460,19 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
     final auth = context.watch<AuthProvider>();
     final currentUserId = auth.currentUser?.id ?? '';
 
-    final joinedCommunities = communityProvider.joinedCommunities;
-
-    // Filter all communities across the app without forcing a single city
-    final exploreCommunities = communityProvider.communities.where((c) {
+    final allCommunities = communityProvider.communities.where((c) {
       final matchesCategory = communityProvider.selectedCategory == 'All' || c.category == communityProvider.selectedCategory;
-      final query = communityProvider.searchQuery.toLowerCase();
+      final query = communityProvider.searchQuery.toLowerCase().trim();
       final matchesSearch = query.isEmpty ||
           c.name.toLowerCase().contains(query) ||
-          c.description.toLowerCase().contains(query) ||
-          c.locationSpot.toLowerCase().contains(query);
+          c.locationSpot.toLowerCase().contains(query) ||
+          c.regionName.toLowerCase().contains(query) ||
+          c.description.toLowerCase().contains(query);
       return matchesCategory && matchesSearch;
     }).toList();
+
+    final groupsList = allCommunities.where((c) => c.isGroupType).toList();
+    final communitiesList = allCommunities.where((c) => !c.isGroupType).toList();
 
     return Scaffold(
       backgroundColor: const Color(0xFF0D1117),
@@ -470,7 +481,7 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
         elevation: 0,
         titleSpacing: widget.isTab ? 16 : 0,
         title: const Text(
-          'Communities',
+          'Groups & Communities',
           style: TextStyle(
             fontWeight: FontWeight.w900,
             fontSize: 20,
@@ -478,12 +489,22 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
           ),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.add_circle_outline_rounded, color: Color(0xFF58A6FF)),
-            tooltip: 'Create Community',
-            onPressed: _showCreateCommunityDialog,
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: ElevatedButton.icon(
+              onPressed: _showCreateCommunityDialog,
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: const Text('Create', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF238636),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                minimumSize: const Size(0, 34),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                elevation: 0,
+              ),
+            ),
           ),
-          const SizedBox(width: 8),
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(48),
@@ -510,9 +531,9 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.explore_outlined, size: 16),
+                      const Icon(Icons.groups_rounded, size: 16),
                       const SizedBox(width: 6),
-                      Text('Explore (${exploreCommunities.length})'),
+                      Text('Groups (${groupsList.length})'),
                     ],
                   ),
                 ),
@@ -520,9 +541,9 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.check_circle_outline_rounded, size: 16),
+                      const Icon(Icons.account_balance_rounded, size: 16),
                       const SizedBox(width: 6),
-                      Text('My Groups (${joinedCommunities.length})'),
+                      Text('Communities (${communitiesList.length})'),
                     ],
                   ),
                 ),
@@ -534,18 +555,47 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
       body: Column(
         children: [
 
-          // 2. Search Field
+          // 2. Search Field by Name or Location
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: TextField(
-              controller: _searchController,
-              onChanged: (val) => communityProvider.setSearchQuery(val),
-              style: const TextStyle(color: Color(0xFFF0F6FC), fontSize: 13.5),
-              decoration: const InputDecoration(
-                hintText: 'Search communities, topics, spots...',
-                prefixIcon: Icon(Icons.search_rounded, size: 20, color: Color(0xFF8B949E)),
-                contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                isDense: true,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            child: Container(
+              height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xFF161B22),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: communityProvider.searchQuery.isNotEmpty ? const Color(0xFF58A6FF) : const Color(0xFF30363D),
+                  width: 1.2,
+                ),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                children: [
+                  const Icon(Icons.search_rounded, size: 20, color: Color(0xFF58A6FF)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: TextField(
+                      controller: _searchController,
+                      onChanged: (val) => communityProvider.setSearchQuery(val),
+                      style: const TextStyle(color: Color(0xFFF0F6FC), fontSize: 13.5),
+                      decoration: const InputDecoration(
+                        hintText: 'Search by name or location...',
+                        hintStyle: TextStyle(color: Color(0xFF8B949E), fontSize: 13),
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ),
+                  if (communityProvider.searchQuery.isNotEmpty)
+                    GestureDetector(
+                      onTap: () {
+                        _searchController.clear();
+                        communityProvider.setSearchQuery('');
+                      },
+                      child: const Icon(Icons.cancel_rounded, size: 18, color: Color(0xFF8B949E)),
+                    ),
+                ],
               ),
             ),
           ),
@@ -581,13 +631,13 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
           ),
           const SizedBox(height: 6),
 
-          // 4. Tab Views
+          // 4. Tab Views: Tab 0 = Groups, Tab 1 = Communities
           Expanded(
             child: TabBarView(
               controller: _tabController,
               children: [
-                // Tab 1: EXPLORE COMMUNITIES
-                exploreCommunities.isEmpty
+                // TAB 0: GROUPS
+                groupsList.isEmpty
                     ? Center(
                         child: Padding(
                           padding: const EdgeInsets.all(32),
@@ -603,17 +653,17 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
                                   border: Border.all(color: const Color(0xFF30363D)),
                                 ),
                                 child: const Center(
-                                  child: Text('💬', style: TextStyle(fontSize: 26)),
+                                  child: Text('👥', style: TextStyle(fontSize: 26)),
                                 ),
                               ),
                               const SizedBox(height: 14),
                               const Text(
-                                'No Communities Found',
+                                'No Groups Found',
                                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFFF0F6FC)),
                               ),
                               const SizedBox(height: 6),
                               const Text(
-                                'Be the first to create a community!',
+                                'Create a group to start discussions with friends!',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(fontSize: 12.5, color: Color(0xFF8B949E)),
                               ),
@@ -621,7 +671,7 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
                               ElevatedButton.icon(
                                 onPressed: _showCreateCommunityDialog,
                                 icon: const Icon(Icons.add_circle_outline_rounded, size: 18),
-                                label: const Text('Create Community'),
+                                label: const Text('Create Group'),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: const Color(0xFF238636),
                                   foregroundColor: Colors.white,
@@ -635,13 +685,31 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
                       )
                     : ListView.builder(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                        itemCount: exploreCommunities.length,
+                        itemCount: groupsList.length,
                         itemBuilder: (context, index) {
-                          final community = exploreCommunities[index];
-                          final isCreator = community.creatorId == currentUserId;
+                          final community = groupsList[index];
+                          final cleanCreator = community.creatorId.toLowerCase().replaceAll('@', '').trim();
+                          final cleanUid = currentUserId.toLowerCase().replaceAll('@', '').trim();
+                          final cleanUname = (auth.currentUser?.username ?? '').toLowerCase().replaceAll('@', '').trim();
+                          final isCreator = cleanCreator.isNotEmpty &&
+                              cleanUid.isNotEmpty &&
+                              (cleanCreator == cleanUid || (cleanUname.isNotEmpty && cleanCreator == cleanUname));
                           return CommunityCard(
                             community: community,
                             onDelete: isCreator ? () => _confirmDeleteCommunity(community) : null,
+                            onChatTap: () {
+                              final chatProvider = context.read<ChatProvider>();
+                              final room = chatProvider.getOrCreateCommunityRoom(
+                                community.id,
+                                community.name,
+                                community.iconEmoji,
+                              );
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => ChatConversationScreen(roomId: room.id),
+                                ),
+                              );
+                            },
                             onTap: () {
                               if (community.isJoined) {
                                 final chatProvider = context.read<ChatProvider>();
@@ -668,15 +736,10 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
                                 _confirmLeaveCommunity(community);
                               } else {
                                 communityProvider.toggleJoinCommunity(community.id, userIdentifier: currentUserId);
-                                final chatProvider = context.read<ChatProvider>();
-                                final room = chatProvider.getOrCreateCommunityRoom(
-                                  community.id,
-                                  community.name,
-                                  community.iconEmoji,
-                                );
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => ChatConversationScreen(roomId: room.id),
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Joined "${community.name}"! 🎉'),
+                                    backgroundColor: const Color(0xFF238636),
                                   ),
                                 );
                               }
@@ -685,8 +748,8 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
                         },
                       ),
 
-                // Tab 2: MY COMMUNITIES (JOINED WITH LEAVE OPTION)
-                joinedCommunities.isEmpty
+                // TAB 1: COMMUNITIES
+                communitiesList.isEmpty
                     ? Center(
                         child: Padding(
                           padding: const EdgeInsets.all(32),
@@ -702,25 +765,25 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
                                   border: Border.all(color: const Color(0xFF30363D)),
                                 ),
                                 child: const Center(
-                                  child: Text('👥', style: TextStyle(fontSize: 26)),
+                                  child: Text('🏛️', style: TextStyle(fontSize: 26)),
                                 ),
                               ),
                               const SizedBox(height: 14),
                               const Text(
-                                'No Joined Communities Yet',
+                                'No Communities Found',
                                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFFF0F6FC)),
                               ),
                               const SizedBox(height: 6),
                               const Text(
-                                'Switch to the Explore tab and tap Join to join city communities!',
+                                'Create a public community for your city, campus or topic!',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(fontSize: 12.5, color: Color(0xFF8B949E)),
                               ),
                               const SizedBox(height: 18),
                               ElevatedButton.icon(
-                                onPressed: () => _tabController.animateTo(0),
-                                icon: const Icon(Icons.explore_rounded, size: 18),
-                                label: const Text('Explore Communities'),
+                                onPressed: _showCreateCommunityDialog,
+                                icon: const Icon(Icons.add_circle_outline_rounded, size: 18),
+                                label: const Text('Create Community'),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: const Color(0xFF238636),
                                   foregroundColor: Colors.white,
@@ -734,14 +797,19 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
                       )
                     : ListView.builder(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                        itemCount: joinedCommunities.length,
+                        itemCount: communitiesList.length,
                         itemBuilder: (context, index) {
-                          final community = joinedCommunities[index];
-                          final isCreator = community.creatorId == currentUserId;
+                          final community = communitiesList[index];
+                          final cleanCreator = community.creatorId.toLowerCase().replaceAll('@', '').trim();
+                          final cleanUid = currentUserId.toLowerCase().replaceAll('@', '').trim();
+                          final cleanUname = (auth.currentUser?.username ?? '').toLowerCase().replaceAll('@', '').trim();
+                          final isCreator = cleanCreator.isNotEmpty &&
+                              cleanUid.isNotEmpty &&
+                              (cleanCreator == cleanUid || (cleanUname.isNotEmpty && cleanCreator == cleanUname));
                           return CommunityCard(
                             community: community,
                             onDelete: isCreator ? () => _confirmDeleteCommunity(community) : null,
-                            onTap: () {
+                            onChatTap: () {
                               final chatProvider = context.read<ChatProvider>();
                               final room = chatProvider.getOrCreateCommunityRoom(
                                 community.id,
@@ -754,8 +822,39 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
                                 ),
                               );
                             },
+                            onTap: () {
+                              if (community.isJoined) {
+                                final chatProvider = context.read<ChatProvider>();
+                                final room = chatProvider.getOrCreateCommunityRoom(
+                                  community.id,
+                                  community.name,
+                                  community.iconEmoji,
+                                );
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => ChatConversationScreen(roomId: room.id),
+                                  ),
+                                );
+                              } else {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => CommunityDetailScreen(communityId: community.id),
+                                  ),
+                                );
+                              }
+                            },
                             onJoinToggle: () {
-                              _confirmLeaveCommunity(community);
+                              if (community.isJoined) {
+                                _confirmLeaveCommunity(community);
+                              } else {
+                                communityProvider.toggleJoinCommunity(community.id, userIdentifier: currentUserId);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Joined "${community.name}"! 🎉'),
+                                    backgroundColor: const Color(0xFF238636),
+                                  ),
+                                );
+                              }
                             },
                           );
                         },
@@ -764,13 +863,6 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
             ),
           ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showCreateCommunityDialog,
-        backgroundColor: const Color(0xFF238636),
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.group_add_rounded),
-        label: const Text('Create Community', style: TextStyle(fontWeight: FontWeight.bold)),
       ),
     );
   }
