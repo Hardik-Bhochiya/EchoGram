@@ -425,7 +425,7 @@ exports.updateProfile = async (req, res) => {
         name: (name || cleanUsername).trim(),
         email: `${cleanUsername}@neartalk.local`,
         campusOrCity: (campusOrCity || 'DDU, Nadiad').trim(),
-        majorOrBio: (majorOrBio || 'NearTalk Member').trim(),
+        majorOrBio: (majorOrBio || 'EchoGram Member').trim(),
         avatarUrl: avatarUrl || '👤',
         reputation: 50,
         joinedCommunityIds: [],

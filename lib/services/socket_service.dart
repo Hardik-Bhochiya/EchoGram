@@ -76,7 +76,7 @@ class SocketService {
 
       _socket?.onConnect((_) {
         _isConnected = true;
-        debugPrint('[SocketService] Connected to NearTalk WebSocket server at $socketUrl');
+        debugPrint('[SocketService] Connected to EchoGram WebSocket server at $socketUrl');
         if (_registeredUserId != null || _registeredUsername != null) {
           _socket?.emit('join_user', {
             'userId': _registeredUserId ?? '',

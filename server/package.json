@@ -1,7 +1,7 @@
 {
-  "name": "neartalk-backend",
+  "name": "echogram-backend",
   "version": "1.0.0",
-  "description": "NearTalk Node.js, Express, Socket.IO & MongoDB Backend Server",
+  "description": "EchoGram Node.js, Express, Socket.IO & MongoDB Backend Server",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",

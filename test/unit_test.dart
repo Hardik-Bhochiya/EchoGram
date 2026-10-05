@@ -1,13 +1,13 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:neartalk/providers/community_provider.dart';
-import 'package:neartalk/providers/question_provider.dart';
-import 'package:neartalk/providers/chat_provider.dart';
-import 'package:neartalk/providers/auth_provider.dart';
-import 'package:neartalk/providers/notification_provider.dart';
-import 'package:neartalk/models/user.dart';
-import 'package:neartalk/services/mock_data_service.dart';
-import 'package:neartalk/services/socket_service.dart';
+import 'package:echogram/providers/community_provider.dart';
+import 'package:echogram/providers/question_provider.dart';
+import 'package:echogram/providers/chat_provider.dart';
+import 'package:echogram/providers/auth_provider.dart';
+import 'package:echogram/providers/notification_provider.dart';
+import 'package:echogram/models/user.dart';
+import 'package:echogram/services/mock_data_service.dart';
+import 'package:echogram/services/socket_service.dart';
 
 void main() {
   setUp(() {
@@ -15,7 +15,7 @@ void main() {
     SocketService.disabledForTests = true;
   });
 
-  group('NearTalk Providers & Business Logic Tests', () {
+  group('EchoGram Providers & Business Logic Tests', () {
     test('CommunityProvider creates community with location spot and creator delete option', () {
       final provider = CommunityProvider();
       final initialCount = provider.allCommunities.length;

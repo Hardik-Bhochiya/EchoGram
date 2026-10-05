@@ -41,7 +41,7 @@ registerChatSocket(io);
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'online',
-    service: 'NearTalk API & Socket.IO Server',
+    service: 'EchoGram API & Socket.IO Server',
     version: '1.0.0',
     timestamp: new Date().toISOString(),
     campus: 'DDU, Nadiad, Gujarat',
@@ -81,7 +81,7 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`=========================================`);
-  console.log(` NearTalk Backend Server Running!`);
+  console.log(` EchoGram Backend Server Running!`);
   console.log(` REST API: http://localhost:${PORT}/api`);
   console.log(` Socket.IO: http://localhost:${PORT}/chat`);
   console.log(` Campus Context: DDU, Nadiad, Gujarat`);

@@ -39,13 +39,13 @@ void main() async {
         ChangeNotifierProvider(create: (_) => ChatProvider()),
         ChangeNotifierProvider(create: (_) => NotificationProvider()),
       ],
-      child: const NearTalkApp(),
+      child: const EchoGramApp(),
     ),
   );
 }
 
-class NearTalkApp extends StatelessWidget {
-  const NearTalkApp({super.key});
+class EchoGramApp extends StatelessWidget {
+  const EchoGramApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -53,7 +53,7 @@ class NearTalkApp extends StatelessWidget {
     final authProvider = context.watch<AuthProvider>();
 
     return MaterialApp(
-      title: 'NearTalk',
+      title: 'EchoGram',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,

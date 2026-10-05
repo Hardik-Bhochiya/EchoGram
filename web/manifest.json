@@ -1,6 +1,6 @@
 {
-    "name": "neartalk",
-    "short_name": "neartalk",
+    "name": "EchoGram",
+    "short_name": "EchoGram",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

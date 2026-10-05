@@ -72,7 +72,7 @@ class HomeScreen extends StatelessWidget {
             ),
             const SizedBox(width: 10),
             const Text(
-              'NearTalk',
+              'EchoGram',
               style: TextStyle(
                 fontWeight: FontWeight.w800,
                 fontSize: 19,

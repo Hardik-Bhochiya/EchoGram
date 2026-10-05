@@ -104,7 +104,7 @@ class NotificationItem {
       actorId: data['actorId'] as String? ?? '',
       type: type,
       entityId: data['entityId'] as String? ?? '',
-      title: data['title'] as String? ?? 'NearTalk Notification',
+      title: data['title'] as String? ?? 'EchoGram Notification',
       message: data['message'] as String? ?? '',
       createdAt: parseDate(data['createdAt']),
       readAt: data['readAt'] != null ? parseDate(data['readAt']) : null,

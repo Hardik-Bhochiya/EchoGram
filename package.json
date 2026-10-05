@@ -1,7 +1,7 @@
 {
-  "name": "neartalk",
+  "name": "echogram",
   "version": "1.0.0",
-  "description": "NearTalk - Full Stack Campus & Region-Based Social Platform",
+  "description": "EchoGram - Full Stack Campus & Region-Based Social Platform",
   "scripts": {
     "dev": "npm --prefix server run dev",
     "start": "npm --prefix server start",

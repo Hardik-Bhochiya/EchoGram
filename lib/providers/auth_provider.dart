@@ -335,7 +335,7 @@ class AuthProvider extends ChangeNotifier {
           lastName: resolvedLast,
           email: email.trim(),
           campusOrCity: city,
-          majorOrBio: majorOrBio ?? 'NearTalk Member',
+          majorOrBio: majorOrBio ?? 'EchoGram Member',
           reputation: 50,
           joinedCommunityIds: const [],
           badges: const ['Newcomer'],
@@ -506,7 +506,7 @@ class AuthProvider extends ChangeNotifier {
       id: 'guest_${DateTime.now().millisecondsSinceEpoch}',
       name: 'Guest Explorer',
       username: 'guest',
-      email: 'guest@neartalk.local',
+      email: 'guest@echogram.local',
     );
     _isAuthenticated = true;
     _isGuest = true;
@@ -641,7 +641,7 @@ class AuthProvider extends ChangeNotifier {
               name: otherDisplayName,
               avatarUrl: otherAvatar,
               email: '$otherUname@neartalk.local',
-              campusOrCity: 'NearTalk Campus',
+              campusOrCity: 'EchoGram Campus',
               createdAt: f.createdAt,
             );
           }
@@ -843,7 +843,7 @@ class AuthProvider extends ChangeNotifier {
                 username: otherUname,
                 name: otherUname,
                 email: '$otherUname@neartalk.local',
-                campusOrCity: 'NearTalk Campus',
+                campusOrCity: 'EchoGram Campus',
                 createdAt: DateTime.now(),
               );
           if (!_friendsList.any((f) => f.username.toLowerCase().replaceAll('@', '') == otherUname)) {

@@ -1,8 +1,8 @@
-# NearTalk
+# EchoGram
 
 > **Ask your community. Know your place.**
 
-NearTalk is a location-based social communication platform built with Flutter and Dart. It is designed to help people connect with others who live, study, or have experience in a particular region.
+EchoGram is a location-based social communication platform built with Flutter and Dart. It is designed to help people connect with others who live, study, or have experience in a particular region.
 
 The platform focuses on helping newcomers, especially college students and people moving to a new city, get useful local information by asking questions and communicating with members of their region-specific communities.
 
@@ -12,7 +12,7 @@ When students join a new college or people move to a new city, they often do not
 
 Finding reliable information can require asking multiple people or searching through unrelated platforms.
 
-NearTalk aims to provide a dedicated platform where users can:
+EchoGram aims to provide a dedicated platform where users can:
 
 - Join communities based on their college, city, locality, or region.
 - Ask questions related to that specific community.

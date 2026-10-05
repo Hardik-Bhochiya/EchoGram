@@ -155,7 +155,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             margin: const EdgeInsets.all(16),
-            content: Text('Welcome to NearTalk, @$uName! 🎉'),
+            content: Text('Welcome to EchoGram, @$uName! 🎉'),
           ),
         );
       } else if (!success && mounted) {
@@ -232,7 +232,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         elevation: 0,
         shape: const Border(bottom: BorderSide(color: Color(0xFF30363D))),
         title: const Text(
-          'Sign Up — NearTalk',
+          'Sign Up — EchoGram',
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFFF0F6FC)),
         ),
       ),

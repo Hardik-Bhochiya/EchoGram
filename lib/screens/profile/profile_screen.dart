@@ -28,7 +28,7 @@ class ProfileScreen extends StatelessWidget {
           ],
         ),
         content: const Text(
-          'Are you sure you want to sign out of NearTalk?',
+          'Are you sure you want to sign out of EchoGram?',
           style: TextStyle(color: Color(0xFF8B949E), fontSize: 13.5),
         ),
         actions: [

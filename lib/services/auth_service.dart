@@ -100,7 +100,7 @@ class AuthService {
         lastName: resolvedLast,
         email: email.trim(),
         campusOrCity: campus,
-        majorOrBio: majorOrBio ?? 'NearTalk Member',
+        majorOrBio: majorOrBio ?? 'EchoGram Member',
         reputation: 50,
         joinedCommunityIds: const [],
         badges: const ['Newcomer'],
@@ -208,7 +208,7 @@ class AuthService {
           name: dName,
           email: fbUser.email ?? resolvedEmail,
           campusOrCity: 'DDU, Nadiad',
-          majorOrBio: 'NearTalk Member',
+          majorOrBio: 'EchoGram Member',
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),
         );
