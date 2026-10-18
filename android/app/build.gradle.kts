@@ -33,23 +33,44 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
-        }
-    }
-
-    packaging {
-        jniLibs {
-            keepDebugSymbols += "**/*.so"
+            ndk {
+                debugSymbolLevel = "none"
+            }
         }
     }
 }
 
 gradle.taskGraph.whenReady {
-    tasks.matching { it.name.contains("strip", ignoreCase = true) }.configureEach {
+    tasks.matching {
+        it.name.contains("strip", ignoreCase = true) ||
+        it.name.contains("extractNativeSymbolTables", ignoreCase = true)
+    }.configureEach {
         enabled = false
     }
+}
+
+tasks.register("copyNativeLibsForPackaging") {
+    doLast {
+        val buildDir = layout.buildDirectory.asFile.get()
+        for (variant in listOf("debug", "release")) {
+            val capitalized = variant.replaceFirstChar { it.uppercase() }
+            val mergedDir = File(buildDir, "intermediates/merged_native_libs/$variant/merge${capitalized}NativeLibs/out/lib")
+            val strippedDir = File(buildDir, "intermediates/stripped_native_libs/$variant/strip${capitalized}DebugSymbols/out/lib")
+            if (mergedDir.exists()) {
+                copy {
+                    from(mergedDir)
+                    into(strippedDir)
+                    exclude("**/libVkLayer_khronos_validation.so")
+                }
+                println("[NativeLibs] Successfully copied native libs for $variant into stripped_native_libs for packaging!")
+            }
+        }
+    }
+}
+
+tasks.matching { it.name.startsWith("package", ignoreCase = true) }.configureEach {
+    dependsOn("copyNativeLibsForPackaging")
 }
 
 flutter {

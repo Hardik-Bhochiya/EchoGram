@@ -16,7 +16,7 @@ class ApiService {
   factory ApiService() => _instance;
   ApiService._internal();
 
-  static const String defaultLanIp = '192.168.101.108';
+  static const String defaultLanIp = '10.100.31.9';
   String? _resolvedBaseHost;
 
   bool _isServerReachable = false;
@@ -90,6 +90,7 @@ class ApiService {
     // 3. 10.0.2.2 (Android Studio Emulator router)
     final candidates = [
       'http://$defaultLanIp:5000',
+      'http://192.168.101.108:5000',
       'http://127.0.0.1:5000',
       'http://10.0.2.2:5000',
     ];
