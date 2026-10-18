@@ -26,6 +26,8 @@ class SocketService {
   final _friendRequestAcceptedController = StreamController<Map<String, dynamic>>.broadcast();
   final _friendRequestDeclinedController = StreamController<Map<String, dynamic>>.broadcast();
   final _communityCreatedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _communityMemberUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _communityDeletedController = StreamController<Map<String, dynamic>>.broadcast();
 
   Stream<ChatMessage> get onMessageReceived => _messageController.stream;
   Stream<Map<String, dynamic>> get onTypingStatus => _typingController.stream;
@@ -38,6 +40,8 @@ class SocketService {
   Stream<Map<String, dynamic>> get onFriendRequestAccepted => _friendRequestAcceptedController.stream;
   Stream<Map<String, dynamic>> get onFriendRequestDeclined => _friendRequestDeclinedController.stream;
   Stream<Map<String, dynamic>> get onCommunityCreated => _communityCreatedController.stream;
+  Stream<Map<String, dynamic>> get onCommunityMemberUpdated => _communityMemberUpdatedController.stream;
+  Stream<Map<String, dynamic>> get onCommunityDeleted => _communityDeletedController.stream;
 
   bool get isConnected => _isConnected;
 
@@ -177,6 +181,24 @@ class SocketService {
           final map = Map<String, dynamic>.from(data);
           _communityCreatedController.add(map);
           debugPrint('[SocketService] Received community_created: ${map['name']} (${map['id']})');
+        }
+      });
+
+      // Real-time membership/memberCount update broadcast when any user joins or leaves a group
+      _socket?.on('community_member_updated', (data) {
+        if (data != null && data is Map) {
+          final map = Map<String, dynamic>.from(data);
+          _communityMemberUpdatedController.add(map);
+          debugPrint('[SocketService] Received community_member_updated: community ${map['communityId']}, count: ${map['memberCount']}, action: ${map['action']}');
+        }
+      });
+
+      // Real-time group / community deletion broadcast
+      _socket?.on('community_deleted', (data) {
+        if (data != null && data is Map) {
+          final map = Map<String, dynamic>.from(data);
+          _communityDeletedController.add(map);
+          debugPrint('[SocketService] Received community_deleted: ${map['communityId']}');
         }
       });
     } catch (e) {

@@ -18,6 +18,8 @@ class CommunityProvider extends ChangeNotifier {
   Timer? _syncTimer;
   StreamSubscription? _firestoreSub;
   StreamSubscription? _socketCommunitySub;
+  StreamSubscription? _socketMemberUpdatedSub;
+  StreamSubscription? _socketCommunityDeletedSub;
   String? _activeUserIdentifier;
   String? _activeUserId;
   String? _activeUsername;
@@ -86,6 +88,74 @@ class CommunityProvider extends ChangeNotifier {
         debugPrint('[CommunityProvider] onCommunityCreated processing error: $e');
       }
     });
+
+    _socketMemberUpdatedSub?.cancel();
+    // Real-time membership/memberCount update listener:
+    // When any user joins or leaves a group, other users see the updated member count instantly without refreshing!
+    _socketMemberUpdatedSub = SocketService().onCommunityMemberUpdated.listen((data) {
+      try {
+        final targetId = data['communityId']?.toString();
+        if (targetId == null || targetId.isEmpty) return;
+
+        final newCount = data['memberCount'] is int
+            ? data['memberCount'] as int
+            : (int.tryParse(data['memberCount']?.toString() ?? '') ?? 1);
+        final rawMembers = data['members'] as List<dynamic>?;
+        final updatedMembers = rawMembers?.map((e) => e.toString()).toList();
+
+        final action = data['action']?.toString();
+        final actionUser = data['userId']?.toString().toLowerCase().replaceAll('@', '').trim();
+        final actionObjectId = data['userObjectId']?.toString().toLowerCase().trim();
+        final actionUsername = data['username']?.toString().toLowerCase().replaceAll('@', '').trim();
+
+        // Check if this action was taken by the current user
+        final bool isMe = (actionUser != null && actionUser.isNotEmpty && (_activeUserId == actionUser || _activeUsername == actionUser)) ||
+            (actionObjectId != null && actionObjectId.isNotEmpty && (_activeUserId == actionObjectId || _activeUsername == actionObjectId)) ||
+            (actionUsername != null && actionUsername.isNotEmpty && (_activeUserId == actionUsername || _activeUsername == actionUsername));
+
+        final idx = _communities.indexWhere((c) => c.id == targetId);
+        if (idx != -1) {
+          final oldComm = _communities[idx];
+          // If it was me who joined/left, update isJoined. Otherwise preserve current isJoined state.
+          final updatedJoined = isMe
+              ? (action == 'join')
+              : oldComm.isJoined;
+
+          final updatedComm = oldComm.copyWith(
+            memberCount: newCount,
+            members: updatedMembers ?? oldComm.members,
+            isJoined: updatedJoined,
+          );
+
+          _communities[idx] = updatedComm;
+          LocalStoreService().addCommunity(updatedComm);
+          notifyListeners();
+          debugPrint('[CommunityProvider] Real-time member count updated: "${updatedComm.name}" -> $newCount members (isMe: $isMe, isJoined: $updatedJoined)');
+        }
+      } catch (e) {
+        debugPrint('[CommunityProvider] onCommunityMemberUpdated error: $e');
+      }
+    });
+
+    _socketCommunityDeletedSub?.cancel();
+    // Real-time community deletion listener
+    _socketCommunityDeletedSub = SocketService().onCommunityDeleted.listen((data) {
+      try {
+        final targetId = data['communityId']?.toString();
+        if (targetId == null || targetId.isEmpty) return;
+
+        final idx = _communities.indexWhere((c) => c.id == targetId);
+        if (idx != -1) {
+          _communities.removeAt(idx);
+          LocalStoreService().deleteCommunity(targetId);
+          _syncRegions();
+          notifyListeners();
+          debugPrint('[CommunityProvider] Real-time group deleted without refresh: $targetId');
+        }
+      } catch (e) {
+        debugPrint('[CommunityProvider] onCommunityDeleted error: $e');
+      }
+    });
   }
 
   @override
@@ -93,6 +163,8 @@ class CommunityProvider extends ChangeNotifier {
     _syncTimer?.cancel();
     _firestoreSub?.cancel();
     _socketCommunitySub?.cancel();
+    _socketMemberUpdatedSub?.cancel();
+    _socketCommunityDeletedSub?.cancel();
     super.dispose();
   }
 

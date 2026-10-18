@@ -237,6 +237,17 @@ exports.deleteCommunity = async (req, res) => {
       store.communities.splice(idx, 1);
     }
 
+    // Real-time broadcast: notify all connected clients that the community/group has been deleted
+    try {
+      const io = req.app.get('io');
+      if (io) {
+        io.of('/chat').emit('community_deleted', { communityId: id });
+        console.log(`[Socket.IO] Broadcasted community_deleted: ${id}`);
+      }
+    } catch (socketErr) {
+      console.error('[Socket.IO community_deleted error]', socketErr.message);
+    }
+
     return res.json({ success: true, message: 'Community deleted successfully' });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
@@ -343,6 +354,26 @@ exports.toggleJoin = async (req, res) => {
       } catch (uErr) {
         console.error('[DB] Error updating user joinedCommunityIds:', uErr.message);
       }
+    }
+
+    // Real-time broadcast: notify all connected sockets that membership/memberCount for this community has changed!
+    try {
+      const io = req.app.get('io');
+      if (io) {
+        const commId = community.id || (community._id ? community._id.toString() : id);
+        io.of('/chat').emit('community_member_updated', {
+          communityId: commId,
+          memberCount: members.length,
+          members: members,
+          userId: userIdentifier,
+          userObjectId: userObjectId,
+          username: cleanUsername,
+          action: isJoinedNow ? 'join' : 'leave',
+        });
+        console.log(`[Socket.IO] Broadcasted community_member_updated: "${community.name}" (${commId}) -> ${members.length} members (action: ${isJoinedNow ? 'join' : 'leave'}, user: ${userIdentifier})`);
+      }
+    } catch (socketErr) {
+      console.error('[Socket.IO community_member_updated error]', socketErr.message);
     }
 
     const normalized = normalizeCommunity(community, userIdentifier);
