@@ -537,12 +537,89 @@ class AuthProvider extends ChangeNotifier {
   // --- Real-time Cloud Firestore Friend Listeners (100% Online Consistency) ---
 
   void _initFirestoreFriendListeners(User user) {
+    if (!FriendshipService().isFirebaseInitialized) return;
     _firestoreIncomingFrSub?.cancel();
     _firestoreOutgoingFrSub?.cancel();
     _firestoreFriendshipsSub?.cancel();
-    // Bypassed: Friend data syncs directly with local MongoDB via ApiService and SocketService.
-    // Disabling Firestore streams prevents legacy 12-day-old friendships (such as linking dhruv_032 & hardik_032) from reappearing.
-    return;
+
+    final cleanMy = user.username.trim().toLowerCase().replaceAll('@', '');
+    if (cleanMy.isEmpty) return;
+
+    // 1. Live Incoming Friend Requests from Cloud Firestore
+    _firestoreIncomingFrSub = FriendshipService().streamPendingIncomingRequests(cleanMy).listen((reqs) {
+      _incomingRequests.clear();
+      for (final req in reqs) {
+        final sClean = req.senderUsername.trim().toLowerCase().replaceAll('@', '');
+        if (sClean != cleanMy && !_friendUsernamesSet.contains(sClean)) {
+          _incomingRequests.add(req);
+          LocalStoreService().addFriendRequest(req);
+        }
+      }
+      notifyListeners();
+    }, onError: (e) {
+      debugPrint('[AuthProvider] Incoming requests stream error: $e');
+    });
+
+    // 2. Live Outgoing Friend Requests from Cloud Firestore
+    _firestoreOutgoingFrSub = FriendshipService().streamOutgoingRequests(cleanMy).listen((reqs) {
+      _outgoingRequests.clear();
+      for (final req in reqs) {
+        final rClean = req.receiverUsername.trim().toLowerCase().replaceAll('@', '');
+        if (rClean != cleanMy) {
+          if (req.isPending && !_friendUsernamesSet.contains(rClean)) {
+            _outgoingRequests.add(req);
+            LocalStoreService().addFriendRequest(req);
+          } else if (req.isAccepted) {
+            _friendUsernamesSet.add(rClean);
+            LocalStoreService().addFriend(cleanMy, rClean);
+          }
+        }
+      }
+      notifyListeners();
+    }, onError: (e) {
+      debugPrint('[AuthProvider] Outgoing requests stream error: $e');
+    });
+
+    // 3. Live Friendships from Cloud Firestore
+    _firestoreFriendshipsSub = FriendshipService().streamFriendships(cleanMy).listen((friendships) {
+      for (final f in friendships) {
+        final otherUname = f.usernames.firstWhere(
+          (u) => u.trim().toLowerCase().replaceAll('@', '') != cleanMy,
+          orElse: () => '',
+        ).trim().toLowerCase().replaceAll('@', '');
+
+        if (otherUname.isNotEmpty && otherUname != cleanMy) {
+          _friendUsernamesSet.add(otherUname);
+          LocalStoreService().addFriend(cleanMy, otherUname);
+
+          final otherName = (f.user1.toLowerCase() == cleanMy) ? f.user2Name : f.user1Name;
+          final otherAvatar = (f.user1.toLowerCase() == cleanMy) ? f.user2Avatar : f.user1Avatar;
+          final otherId = (f.user1.toLowerCase() == cleanMy)
+              ? (f.userIds.length > 1 ? f.userIds[1] : 'user_$otherUname')
+              : (f.userIds.isNotEmpty ? f.userIds[0] : 'user_$otherUname');
+
+          final friendObj = User(
+            id: otherId,
+            username: otherUname,
+            name: (otherName != null && otherName.isNotEmpty) ? otherName : otherUname,
+            email: '$otherUname@neartalk.local',
+            avatarUrl: otherAvatar,
+            campusOrCity: 'Campus',
+            createdAt: DateTime.now(),
+          );
+
+          if (!_friendsList.any((u) => u.username.toLowerCase().replaceAll('@', '') == otherUname)) {
+            _friendsList.add(friendObj);
+          }
+          if (!_knownUsers.any((u) => u.username.toLowerCase().replaceAll('@', '') == otherUname)) {
+            _knownUsers.add(friendObj);
+          }
+        }
+      }
+      notifyListeners();
+    }, onError: (e) {
+      debugPrint('[AuthProvider] Friendships stream error: $e');
+    });
   }
 
   // --- Friends & Friend Requests Methods for UI Compatibility ---
