@@ -4,50 +4,94 @@ const User = require('../models/User');
 const { isConnected } = require('../config/db');
 const { v4: uuidv4 } = require('uuid');
 
-const normalizeCommunity = (c, userIdentifier) => {
+const normalizeCommunity = (c, userIdentifier, userResolvedMap) => {
   const obj = c.toObject ? c.toObject() : { ...c };
   const members = Array.isArray(obj.members) ? obj.members : [];
-  
+
   let isJoined = false;
   if (userIdentifier) {
-    const cleanUser = userIdentifier.toLowerCase().replace(/^@/, '');
-    isJoined = members.some((m) => String(m).toLowerCase().replace(/^@/, '') === cleanUser);
+    const cleanUser = String(userIdentifier).toLowerCase().replace(/^@/, '').trim();
+    const cleanCreator = String(obj.creatorId || '').toLowerCase().replace(/^@/, '').trim();
+
+    // A user is joined ONLY if they are explicitly in the members list or are the creator
+    if (cleanCreator === cleanUser && cleanCreator.length > 0) {
+      isJoined = true;
+    } else {
+      isJoined = members.some((m) => {
+        const cleanM = String(m).toLowerCase().replace(/^@/, '').trim();
+        return cleanM === cleanUser;
+      });
+    }
+
+    // Also check through resolved aliases (id <-> username) if provided
+    if (!isJoined && userResolvedMap) {
+      const aliases = userResolvedMap.get(cleanUser) || [];
+      for (const alias of aliases) {
+        if (cleanCreator === alias || members.some((m) => String(m).toLowerCase().replace(/^@/, '').trim() === alias)) {
+          isJoined = true;
+          break;
+        }
+      }
+    }
   }
+
+  // Remove static isJoined on the document so it never bleeds to other users
+  delete obj.isJoined;
 
   return {
     ...obj,
     id: obj.id || (obj._id ? obj._id.toString() : uuidv4()),
     members,
-    isJoined: isJoined || Boolean(obj.isJoined),
+    isJoined: Boolean(isJoined),
     memberCount: members.length > 0 ? members.length : (obj.memberCount || 1),
     rules: obj.rules || [
-      '1. Respect all members',
-      '2. No spam or commercial promotions',
-      '3. No abusive language or harassment',
-      '4. Stay on topic and share relevant updates',
+      '1. Treat all members with respect and courtesy.',
+      '2. No abusive language, harassment, or hate speech.',
+      '3. No commercial spam or unauthorized promotions.',
+      '4. Keep discussions genuine and relevant.',
     ],
   };
 };
 
 exports.getCommunities = async (req, res) => {
   try {
-    const userIdentifier = req.query.userId || req.query.username || '';
+    const rawUser = (req.query.userId || req.query.username || '').trim();
+    let userResolvedMap = null;
+
+    if (rawUser && isConnected()) {
+      try {
+        const uDoc = await User.findOne({
+          $or: [
+            { _id: rawUser.match(/^[0-9a-fA-F]{24}$/) ? rawUser : null },
+            { username: rawUser.toLowerCase().replace(/^@/, '') },
+          ],
+        });
+        if (uDoc) {
+          const uId = uDoc._id.toString().toLowerCase();
+          const uName = (uDoc.username || '').toLowerCase();
+          userResolvedMap = new Map();
+          userResolvedMap.set(rawUser.toLowerCase().replace(/^@/, ''), [uId, uName]);
+          userResolvedMap.set(uId, [rawUser.toLowerCase().replace(/^@/, ''), uName]);
+          userResolvedMap.set(uName, [rawUser.toLowerCase().replace(/^@/, ''), uId]);
+        }
+      } catch (_) {}
+    }
 
     if (isConnected()) {
       const dbCommunities = await Community.find().sort({ createdAt: -1 });
-      const normalized = dbCommunities.map((c) => normalizeCommunity(c, userIdentifier));
+      const normalized = dbCommunities.map((c) => normalizeCommunity(c, rawUser, userResolvedMap));
 
       // Merge with in-memory store so default campus communities are always available
       const existingIds = new Set(normalized.map((c) => c.id));
       for (const sc of store.communities) {
         if (!existingIds.has(sc.id)) {
-          normalized.push(normalizeCommunity(sc, userIdentifier));
+          normalized.push(normalizeCommunity(sc, rawUser, userResolvedMap));
         }
       }
 
       return res.json({ success: true, count: normalized.length, data: normalized });
     } else {
-      const list = store.communities.map((c) => normalizeCommunity(c, userIdentifier));
+      const list = store.communities.map((c) => normalizeCommunity(c, rawUser, userResolvedMap));
       return res.json({ success: true, count: list.length, data: list });
     }
   } catch (err) {
@@ -154,12 +198,17 @@ exports.createCommunity = async (req, res) => {
     const responseData = normalizeCommunity(newCommunityData, cleanCreator);
     responseData.isJoined = true;
 
-    // Real-time broadcast: notify all connected sockets that a new group has been created
+    // Real-time broadcast: notify all connected sockets that a new group has been created.
+    // Broadcast to other users with isJoined: false so they are NOT auto-joined and have a "Join" option!
     try {
       const io = req.app.get('io');
       if (io) {
-        io.of('/chat').emit('community_created', responseData);
-        console.log(`[Socket.IO] Broadcasted community_created: "${responseData.name}" (${responseData.id})`);
+        const broadcastData = {
+          ...responseData,
+          isJoined: false,
+        };
+        io.of('/chat').emit('community_created', broadcastData);
+        console.log(`[Socket.IO] Broadcasted community_created: "${broadcastData.name}" (${broadcastData.id}) (isJoined: false for other users)`);
       }
     } catch (socketErr) {
       console.error('[Socket.IO community_created error]', socketErr.message);
@@ -210,17 +259,42 @@ exports.toggleJoin = async (req, res) => {
 
     if (!community) return res.status(404).json({ success: false, message: 'Community not found' });
 
+    let userObjectId = null;
+    let cleanUsername = userIdentifier;
+    if (isConnected() && userIdentifier) {
+      try {
+        const uDoc = await User.findOne({
+          $or: [
+            { _id: userIdentifier.match(/^[0-9a-fA-F]{24}$/) ? userIdentifier : null },
+            { username: userIdentifier },
+          ],
+        });
+        if (uDoc) {
+          userObjectId = uDoc._id.toString().toLowerCase();
+          cleanUsername = (uDoc.username || '').toLowerCase();
+        }
+      } catch (_) {}
+    }
+
     let members = Array.isArray(community.members) ? [...community.members] : [];
-    const isMember = userIdentifier && members.some((m) => String(m).toLowerCase().replace(/^@/, '') === userIdentifier);
+    const isMember = userIdentifier && members.some((m) => {
+      const cleanM = String(m).toLowerCase().replace(/^@/, '');
+      return cleanM === userIdentifier || (userObjectId && cleanM === userObjectId) || (cleanUsername && cleanM === cleanUsername);
+    });
 
     let isJoinedNow = false;
     if (isMember) {
-      // Leave
-      members = members.filter((m) => String(m).toLowerCase().replace(/^@/, '') !== userIdentifier);
+      // Leave: remove all matching identifiers for this user
+      members = members.filter((m) => {
+        const cleanM = String(m).toLowerCase().replace(/^@/, '');
+        return cleanM !== userIdentifier && (userObjectId ? cleanM !== userObjectId : true) && (cleanUsername ? cleanM !== cleanUsername : true);
+      });
       isJoinedNow = false;
     } else {
-      // Join
-      if (userIdentifier) {
+      // Join: explicitly add user
+      if (userObjectId && !members.some((m) => String(m).toLowerCase() === userObjectId)) {
+        members.push(userObjectId);
+      } else if (userIdentifier && !members.some((m) => String(m).toLowerCase() === userIdentifier)) {
         members.push(userIdentifier);
       }
       isJoinedNow = true;
@@ -228,7 +302,7 @@ exports.toggleJoin = async (req, res) => {
 
     community.members = members;
     community.memberCount = members.length;
-    community.isJoined = isJoinedNow;
+    // Do not set isJoined as a static property on the shared community record
 
     if (community.save) {
       await community.save();
@@ -239,7 +313,7 @@ exports.toggleJoin = async (req, res) => {
     if (storeComm) {
       storeComm.members = members;
       storeComm.memberCount = members.length;
-      storeComm.isJoined = isJoinedNow;
+      delete storeComm.isJoined;
     }
 
     // Update user's joinedCommunityIds in MongoDB

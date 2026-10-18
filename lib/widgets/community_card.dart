@@ -254,35 +254,37 @@ class CommunityCard extends StatelessWidget {
                           tooltip: 'Delete Group (Creator)',
                           onPressed: onDelete,
                         ),
-                      // Simple Chat Button
-                      InkWell(
-                        onTap: onChatTap ?? onTap,
-                        borderRadius: BorderRadius.circular(18),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5.5),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF21262D),
-                            borderRadius: BorderRadius.circular(18),
-                            border: Border.all(color: const Color(0xFF58A6FF)),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.chat_bubble_outline_rounded, size: 13, color: Color(0xFF58A6FF)),
-                              SizedBox(width: 4),
-                              Text(
-                                'Chat',
-                                style: TextStyle(
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF58A6FF),
+                      // Simple Chat Button (only visible when joined)
+                      if (community.isJoined) ...[
+                        InkWell(
+                          onTap: onChatTap ?? onTap,
+                          borderRadius: BorderRadius.circular(18),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5.5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF21262D),
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(color: const Color(0xFF58A6FF)),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.chat_bubble_outline_rounded, size: 13, color: Color(0xFF58A6FF)),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Chat',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF58A6FF),
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
+                        const SizedBox(width: 8),
+                      ],
 
                       // Join / Leave Button
                       if (community.isJoined)
@@ -318,7 +320,7 @@ class CommunityCard extends StatelessWidget {
                           onTap: onJoinToggle,
                           borderRadius: BorderRadius.circular(18),
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5.5),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                             decoration: BoxDecoration(
                               color: const Color(0xFF238636),
                               borderRadius: BorderRadius.circular(18),

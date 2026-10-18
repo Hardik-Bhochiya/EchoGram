@@ -19,6 +19,8 @@ class CommunityProvider extends ChangeNotifier {
   StreamSubscription? _firestoreSub;
   StreamSubscription? _socketCommunitySub;
   String? _activeUserIdentifier;
+  String? _activeUserId;
+  String? _activeUsername;
 
   List<Region> get regions => _regions;
   Region? get selectedRegion => _selectedRegion;
@@ -37,13 +39,39 @@ class CommunityProvider extends ChangeNotifier {
     });
   }
 
+  /// Sets the currently authenticated user's identifiers and refreshes community membership state
+  void setActiveUser({String? userId, String? username}) {
+    final cleanId = userId?.toLowerCase().replaceAll('@', '').trim();
+    final cleanName = username?.toLowerCase().replaceAll('@', '').trim();
+    final newIdentifier = (cleanId != null && cleanId.isNotEmpty) ? cleanId : cleanName;
+
+    if (_activeUserId != cleanId || _activeUsername != cleanName || _activeUserIdentifier != newIdentifier) {
+      _activeUserId = cleanId;
+      _activeUsername = cleanName;
+      _activeUserIdentifier = newIdentifier;
+      refreshCommunities(userIdentifier: _activeUserIdentifier);
+    }
+  }
+
   void _initSocketListener() {
     _socketCommunitySub?.cancel();
     // Real-time group / community addition listener from Socket.IO:
-    // When another account creates a group, it immediately appears on this client without any page refresh!
+    // When another account creates a group, it immediately appears on this client with Join button!
     _socketCommunitySub = SocketService().onCommunityCreated.listen((data) {
       try {
-        final newComm = Community.fromJson(data);
+        final incoming = Community.fromJson(data);
+        final cleanCreator = incoming.creatorId.toLowerCase().replaceAll('@', '').trim();
+
+        // Check if the current user is the creator or already in the members array
+        final isCreator = (_activeUserId != null && _activeUserId!.isNotEmpty && cleanCreator == _activeUserId) ||
+            (_activeUsername != null && _activeUsername!.isNotEmpty && cleanCreator == _activeUsername);
+        final isMember = (_activeUserId != null && _activeUserId!.isNotEmpty && incoming.members.any((m) => m.toLowerCase().replaceAll('@', '').trim() == _activeUserId)) ||
+            (_activeUsername != null && _activeUsername!.isNotEmpty && incoming.members.any((m) => m.toLowerCase().replaceAll('@', '').trim() == _activeUsername));
+
+        // If I created it or am in members, isJoined = true. Otherwise, isJoined = false (shows "Join" button)!
+        final bool isJoinedForMe = isCreator || isMember;
+        final newComm = incoming.copyWith(isJoined: isJoinedForMe);
+
         final existingIdx = _communities.indexWhere((c) => c.id == newComm.id);
         if (existingIdx != -1) {
           _communities[existingIdx] = newComm;
@@ -53,7 +81,7 @@ class CommunityProvider extends ChangeNotifier {
         LocalStoreService().addCommunity(newComm);
         _syncRegions();
         notifyListeners();
-        debugPrint('[CommunityProvider] Real-time community received & added without refresh: "${newComm.name}" (${newComm.id})');
+        debugPrint('[CommunityProvider] Real-time community received: "${newComm.name}" (isJoinedForMe: $isJoinedForMe)');
       } catch (e) {
         debugPrint('[CommunityProvider] onCommunityCreated processing error: $e');
       }
@@ -116,7 +144,7 @@ class CommunityProvider extends ChangeNotifier {
       final remoteList = await ApiService().getCommunities(userIdentifier: _activeUserIdentifier);
       final Map<String, Community> map = {};
       bool hasChanges = false;
-      final cleanUser = (_activeUserIdentifier ?? '').toLowerCase().replaceAll('@', '');
+      final cleanUser = (_activeUserIdentifier ?? '').toLowerCase().replaceAll('@', '').trim();
 
       for (final rc in remoteList) {
         final cName = rc.name.toLowerCase();
@@ -127,15 +155,23 @@ class CommunityProvider extends ChangeNotifier {
             rc.creatorId == 'rahul123') {
           continue;
         }
-        final existingIdx = _communities.indexWhere((c) => c.id == rc.id);
-        final bool wasJoined = existingIdx != -1 ? _communities[existingIdx].isJoined : false;
-        final bool isMember = cleanUser.isNotEmpty && rc.members.any((m) => m.toLowerCase().replaceAll('@', '') == cleanUser);
-        final bool isJoined = rc.isJoined || wasJoined || isMember;
+
+        final cleanCreator = rc.creatorId.toLowerCase().replaceAll('@', '').trim();
+        final isCreator = (_activeUserId != null && _activeUserId!.isNotEmpty && cleanCreator == _activeUserId) ||
+            (_activeUsername != null && _activeUsername!.isNotEmpty && cleanCreator == _activeUsername);
+        final isMember = (cleanUser.isNotEmpty && rc.members.any((m) => m.toLowerCase().replaceAll('@', '').trim() == cleanUser)) ||
+            (_activeUserId != null && _activeUserId!.isNotEmpty && rc.members.any((m) => m.toLowerCase().replaceAll('@', '').trim() == _activeUserId)) ||
+            (_activeUsername != null && _activeUsername!.isNotEmpty && rc.members.any((m) => m.toLowerCase().replaceAll('@', '').trim() == _activeUsername));
+
+        // Join status is determined dynamically: backend normalization, creator ownership, or explicit membership.
+        // Avoid sticky local wasJoined so unjoined communities correctly show the 'Join' button.
+        final bool isJoined = rc.isJoined || isCreator || isMember;
 
         final updated = rc.copyWith(isJoined: isJoined);
         map[rc.id] = updated;
         LocalStoreService().addCommunity(updated);
         LocalStoreService().addLocation(rc.regionName);
+        final existingIdx = _communities.indexWhere((c) => c.id == rc.id);
         if (existingIdx == -1 ||
             _communities[existingIdx].isJoined != isJoined ||
             _communities[existingIdx].memberCount != rc.memberCount) {
@@ -212,7 +248,7 @@ class CommunityProvider extends ChangeNotifier {
       final current = _communities[index];
       final newJoined = !current.isJoined;
 
-      final effUser = (userIdentifier ?? _activeUserIdentifier ?? '').toLowerCase().replaceAll('@', '').trim();
+      final effUser = (userIdentifier ?? _activeUserIdentifier ?? _activeUserId ?? _activeUsername ?? '').toLowerCase().replaceAll('@', '').trim();
       final updatedMembers = List<String>.from(current.members);
       if (newJoined) {
         if (effUser.isNotEmpty && !updatedMembers.any((m) => m.toLowerCase().replaceAll('@', '').trim() == effUser)) {
@@ -238,7 +274,7 @@ class CommunityProvider extends ChangeNotifier {
         memberCount: newCount,
         members: updatedMembers,
       );
-      LocalStoreService().toggleJoinCommunity(communityId);
+      LocalStoreService().addCommunity(_communities[index]);
       notifyListeners();
 
       if (effUser.isNotEmpty) {
@@ -268,8 +304,8 @@ class CommunityProvider extends ChangeNotifier {
           if (updated != null) {
             final idx = _communities.indexWhere((c) => c.id == communityId);
             if (idx != -1) {
-              _communities[idx] = updated;
-              LocalStoreService().addCommunity(updated);
+              _communities[idx] = updated.copyWith(isJoined: newJoined);
+              LocalStoreService().addCommunity(_communities[idx]);
               notifyListeners();
             }
           }

@@ -885,21 +885,49 @@ class HomeScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: community.isJoined ? const Color(0xFF21262D) : const Color(0xFF238636),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: community.isJoined ? const Color(0xFF30363D) : const Color(0xFF238636),
+            InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () {
+                if (community.isJoined) {
+                  final chatProvider = context.read<ChatProvider>();
+                  final room = chatProvider.getOrCreateCommunityRoom(
+                    community.id,
+                    community.name,
+                    community.iconEmoji,
+                  );
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ChatConversationScreen(roomId: room.id),
+                    ),
+                  );
+                } else {
+                  final currentUserId = context.read<AuthProvider>().currentUser?.id ?? '';
+                  context.read<CommunityProvider>().toggleJoinCommunity(community.id, userIdentifier: currentUserId);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Joined "${community.name}"! 🎉'),
+                      backgroundColor: const Color(0xFF238636),
+                    ),
+                  );
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: community.isJoined ? const Color(0xFF21262D) : const Color(0xFF238636),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: community.isJoined ? const Color(0xFF30363D) : const Color(0xFF238636),
+                  ),
                 ),
-              ),
-              child: Text(
-                community.isJoined ? 'Chat' : 'Join',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: community.isJoined ? const Color(0xFF58A6FF) : Colors.white,
+                child: Text(
+                  community.isJoined ? 'Chat' : 'Join',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: community.isJoined ? const Color(0xFF58A6FF) : Colors.white,
+                  ),
                 ),
               ),
             ),

@@ -7,6 +7,7 @@ import 'chat/chat_list_screen.dart';
 import 'profile/profile_screen.dart';
 import '../providers/chat_provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/community_provider.dart';
 
 class MainNavScreen extends StatefulWidget {
   const MainNavScreen({super.key});
@@ -37,6 +38,10 @@ class _MainNavScreenState extends State<MainNavScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           context.read<ChatProvider>().setCurrentUser(currentUser);
+          context.read<CommunityProvider>().setActiveUser(
+            userId: currentUser.id,
+            username: currentUser.username,
+          );
         }
       });
     }
