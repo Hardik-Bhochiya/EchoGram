@@ -16,32 +16,6 @@ import 'widgets/mobile_device_frame.dart';
 import 'screens/main_nav_screen.dart';
 import 'screens/auth/login_screen.dart';
 
-Future<void> _wipeAllFirestoreData() async {
-  try {
-    if (Firebase.apps.isNotEmpty) {
-      final db = FirebaseFirestore.instance;
-      final collections = [
-        'messages',
-        'communities',
-        'friendships',
-        'friendRequests',
-        'chatRooms',
-        'questions',
-        'users',
-        'usernames',
-        'notifications',
-      ];
-      for (final col in collections) {
-        try {
-          final snap = await db.collection(col).get().timeout(const Duration(milliseconds: 1500));
-          for (final doc in snap.docs) {
-            await doc.reference.delete();
-          }
-        } catch (_) {}
-      }
-    }
-  } catch (_) {}
-}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

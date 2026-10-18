@@ -855,64 +855,7 @@ class ChatProvider extends ChangeNotifier {
 
   }
 
-  void _triggerSimulatedPeerReply(String roomId, String prompt) {
-    final isRahulDM = roomId.contains('rahul');
-    final responderName = isRahulDM ? 'Rahul Patel (@rahul_ce)' : 'EchoGram Peer';
-    final responderId = isRahulDM ? 'user-rahul' : 'u-peer';
 
-    // 1. Show Typing Indicator after 500ms
-    Timer(const Duration(milliseconds: 500), () {
-      _typingUser[roomId] = responderName;
-      notifyListeners();
-    });
-
-    // 2. Deliver Realistic Response after 1.8s
-    Timer(const Duration(milliseconds: 1800), () {
-      _typingUser[roomId] = null;
-
-      String replyContent = 'Got it! Thanks for reaching out.';
-      final lower = prompt.toLowerCase();
-
-      if (lower.contains('basketball') || lower.contains('court') || lower.contains('gym') || lower.contains('sport')) {
-        replyContent = 'Yes! Let me know if you want to team up! 🏀';
-      } else if (lower.contains('coffee') || lower.contains('food') || lower.contains('lunch') || lower.contains('eat')) {
-        replyContent = 'Sounds great, let me know the place and time! 🍲';
-      } else if (lower.contains('project') || lower.contains('code') || lower.contains('work')) {
-        replyContent = 'Sounds interesting! Let me know if you want to collaborate on it.';
-      } else if (lower.contains('hi') || lower.contains('hello') || lower.contains('hey')) {
-        replyContent = 'Hey! Doing great, how is everything going with you? 👋';
-      }
-
-      final peerMsg = ChatMessage(
-        id: MockDataService.generateId(),
-        roomId: roomId,
-        senderId: responderId,
-        senderName: responderName,
-        content: replyContent,
-        timestamp: DateTime.now(),
-        isMine: false,
-        isAnonymous: false,
-        status: 'seen',
-      );
-
-      if (!_messages.containsKey(roomId)) {
-        _messages[roomId] = [];
-      }
-      _messages[roomId]!.add(peerMsg);
-      LocalStoreService().addMessage(peerMsg);
-
-      final index = _rooms.indexWhere((r) => r.id == roomId);
-      if (index != -1) {
-        _rooms[index] = _rooms[index].copyWith(
-          lastMessage: replyContent,
-          lastMessageTime: DateTime.now(),
-          unreadCount: _rooms[index].unreadCount + 1,
-        );
-        LocalStoreService().addOrUpdateRoom(_rooms[index]);
-      }
-      notifyListeners();
-    });
-  }
 
   @override
   void dispose() {
