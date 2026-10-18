@@ -38,21 +38,38 @@ class UserService {
     if (isFirebaseInitialized) {
       try {
         final cleanLower = clean.toLowerCase();
-        final usernameSnap = await _firestore
-            .collection('users')
-            .where('normalizedUsername', isGreaterThanOrEqualTo: cleanLower)
-            .where('normalizedUsername', isLessThanOrEqualTo: '$cleanLower\uf8ff')
-            .limit(20)
-            .get();
-
         final fsUsers = <User>[];
-        for (final doc in usernameSnap.docs) {
+
+        // 2a. Prefix search on normalizedUsername
+        try {
+          final usernameSnap = await _firestore
+              .collection('users')
+              .where('normalizedUsername', isGreaterThanOrEqualTo: cleanLower)
+              .where('normalizedUsername', isLessThanOrEqualTo: '$cleanLower\uf8ff')
+              .limit(20)
+              .get();
+
+          for (final doc in usernameSnap.docs) {
+            final u = User.fromFirestore(doc.data(), doc.id);
+            if (!isSelf(u)) {
+              combined[u.username.toLowerCase()] = u;
+              fsUsers.add(u);
+            }
+          }
+        } catch (_) {}
+
+        // 2b. Full coverage scan over recent Firestore users to match name & handle
+        final allUsersSnap = await _firestore.collection('users').limit(60).get();
+        for (final doc in allUsersSnap.docs) {
           final u = User.fromFirestore(doc.data(), doc.id);
-          if (!isSelf(u)) {
+          final uName = u.name.toLowerCase();
+          final uUname = u.username.toLowerCase();
+          if ((uName.contains(cleanLower) || uUname.contains(cleanLower)) && !isSelf(u)) {
             combined[u.username.toLowerCase()] = u;
             fsUsers.add(u);
           }
         }
+
         if (fsUsers.isNotEmpty) LocalStoreService().saveUsers(fsUsers);
       } catch (_) {}
     }

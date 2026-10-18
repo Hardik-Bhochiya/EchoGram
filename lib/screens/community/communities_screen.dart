@@ -489,6 +489,20 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
           ),
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded, color: Color(0xFF58A6FF)),
+            tooltip: 'Sync with Cloud',
+            onPressed: () {
+              communityProvider.refreshCommunities();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Syncing groups with cloud... 🔄'),
+                  duration: Duration(seconds: 1),
+                  backgroundColor: Color(0xFF161B22),
+                ),
+              );
+            },
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: ElevatedButton.icon(
@@ -633,9 +647,14 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
 
           // 4. Tab Views: Tab 0 = Groups, Tab 1 = Communities
           Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
+            child: RefreshIndicator(
+              onRefresh: () => communityProvider.refreshCommunities(),
+              color: const Color(0xFF58A6FF),
+              backgroundColor: const Color(0xFF161B22),
+              child: TabBarView(
+                controller: _tabController,
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: [
                 // TAB 0: GROUPS
                 groupsList.isEmpty
                     ? Center(
@@ -862,6 +881,7 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
               ],
             ),
           ),
+        ),
         ],
       ),
     );

@@ -283,49 +283,60 @@ class FriendshipService {
     }
   }
 
-  /// Stream pending incoming friend requests for user by username
-  Stream<List<FriendRequest>> streamPendingIncomingRequests(String username) {
+  /// Stream pending incoming friend requests for user (matches both username and UID, zero composite index requirement)
+  Stream<List<FriendRequest>> streamPendingIncomingRequests(String identifier) {
     if (!isFirebaseInitialized) return const Stream.empty();
-    final clean = username.trim().toLowerCase().replaceAll('@', '');
+    final clean = identifier.trim().toLowerCase().replaceAll('@', '');
     if (clean.isEmpty) return const Stream.empty();
 
     return _firestore
         .collection('friendRequests')
-        .where('receiverUsername', isEqualTo: clean)
-        .where('status', isEqualTo: 'pending')
         .snapshots()
         .map((snap) => snap.docs
             .map((doc) => FriendRequest.fromFirestore(doc.data(), doc.id))
+            .where((req) {
+              final rUname = req.receiverUsername.toLowerCase().replaceAll('@', '').trim();
+              final rId = req.receiverId.toLowerCase().trim();
+              return (rUname == clean || rId == clean) && req.status == 'pending';
+            })
             .toList());
   }
 
-  /// Stream outgoing friend requests for user by username (includes status updates like declined/accepted)
-  Stream<List<FriendRequest>> streamOutgoingRequests(String username) {
+  /// Stream outgoing friend requests for user (matches both username and UID)
+  Stream<List<FriendRequest>> streamOutgoingRequests(String identifier) {
     if (!isFirebaseInitialized) return const Stream.empty();
-    final clean = username.trim().toLowerCase().replaceAll('@', '');
+    final clean = identifier.trim().toLowerCase().replaceAll('@', '');
     if (clean.isEmpty) return const Stream.empty();
 
     return _firestore
         .collection('friendRequests')
-        .where('senderUsername', isEqualTo: clean)
         .snapshots()
         .map((snap) => snap.docs
             .map((doc) => FriendRequest.fromFirestore(doc.data(), doc.id))
+            .where((req) {
+              final sUname = req.senderUsername.toLowerCase().replaceAll('@', '').trim();
+              final sId = req.senderId.toLowerCase().trim();
+              return sUname == clean || sId == clean;
+            })
             .toList());
   }
 
-  /// Stream all friendships for user by username
-  Stream<List<Friendship>> streamFriendships(String username) {
+  /// Stream all friendships for user (matches both username and UID)
+  Stream<List<Friendship>> streamFriendships(String identifier) {
     if (!isFirebaseInitialized) return const Stream.empty();
-    final clean = username.trim().toLowerCase().replaceAll('@', '');
+    final clean = identifier.trim().toLowerCase().replaceAll('@', '');
     if (clean.isEmpty) return const Stream.empty();
 
     return _firestore
         .collection('friendships')
-        .where('usernames', arrayContains: clean)
         .snapshots()
         .map((snap) => snap.docs
             .map((doc) => Friendship.fromFirestore(doc.data(), doc.id))
+            .where((f) {
+              final inUsernames = f.usernames.any((u) => u.toLowerCase().replaceAll('@', '').trim() == clean);
+              final inIds = f.userIds.any((uid) => uid.toLowerCase().trim() == clean);
+              return inUsernames || inIds;
+            })
             .toList());
   }
 }

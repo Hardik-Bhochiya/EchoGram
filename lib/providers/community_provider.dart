@@ -201,10 +201,6 @@ class CommunityProvider extends ChangeNotifier {
           final data = doc.data();
           try {
             final c = Community.fromJson(data);
-            final cName = c.name.toLowerCase();
-            if (cName == 'abc' || cName == 'apc' || cName.contains('hustlers') || cName.contains('canteen') || cName.contains('robotics')) {
-              continue;
-            }
 
             final cleanCreator = c.creatorId.toLowerCase().replaceAll('@', '').trim();
             final isCreator = (_activeUserId != null && _activeUserId!.isNotEmpty && cleanCreator == _activeUserId) ||
@@ -272,93 +268,71 @@ class CommunityProvider extends ChangeNotifier {
     if (userIdentifier != null && userIdentifier.isNotEmpty) {
       _activeUserIdentifier = userIdentifier;
     }
-    try {
-      final remoteList = await ApiService().getCommunities(userIdentifier: _activeUserIdentifier);
-      final Map<String, Community> map = {};
-      bool hasChanges = false;
-      final cleanUser = (_activeUserIdentifier ?? '').toLowerCase().replaceAll('@', '').trim();
 
-      for (final rc in remoteList) {
-        final cName = rc.name.toLowerCase();
-        if (rc.id.startsWith('c') ||
-            cName.contains('canteen') ||
-            cName.contains('hostel') ||
-            cName.contains('robotics') ||
-            rc.creatorId == 'rahul123') {
-          continue;
-        }
+    final cleanUser = (_activeUserIdentifier ?? '').toLowerCase().replaceAll('@', '').trim();
+    bool hasChanges = false;
 
-        final cleanCreator = rc.creatorId.toLowerCase().replaceAll('@', '').trim();
-        final isCreator = (_activeUserId != null && _activeUserId!.isNotEmpty && cleanCreator == _activeUserId) ||
-            (_activeUsername != null && _activeUsername!.isNotEmpty && cleanCreator == _activeUsername);
-        final isMember = (cleanUser.isNotEmpty && rc.members.any((m) => m.toLowerCase().replaceAll('@', '').trim() == cleanUser)) ||
-            (_activeUserId != null && _activeUserId!.isNotEmpty && rc.members.any((m) => m.toLowerCase().replaceAll('@', '').trim() == _activeUserId)) ||
-            (_activeUsername != null && _activeUsername!.isNotEmpty && rc.members.any((m) => m.toLowerCase().replaceAll('@', '').trim() == _activeUsername));
+    // 1. Primary Cloud Firestore Query (Global Source of Truth)
+    if (Firebase.apps.isNotEmpty) {
+      try {
+        final snapshot = await FirebaseFirestore.instance.collection('communities').get();
+        for (final doc in snapshot.docs) {
+          try {
+            final rc = Community.fromJson(doc.data());
+            final cleanCreator = rc.creatorId.toLowerCase().replaceAll('@', '').trim();
+            final isCreator = (_activeUserId != null && _activeUserId!.isNotEmpty && cleanCreator == _activeUserId) ||
+                (_activeUsername != null && _activeUsername!.isNotEmpty && cleanCreator == _activeUsername);
+            final isMember = (cleanUser.isNotEmpty && rc.members.any((m) => m.toLowerCase().replaceAll('@', '').trim() == cleanUser)) ||
+                (_activeUserId != null && _activeUserId!.isNotEmpty && rc.members.any((m) => m.toLowerCase().replaceAll('@', '').trim() == _activeUserId)) ||
+                (_activeUsername != null && _activeUsername!.isNotEmpty && rc.members.any((m) => m.toLowerCase().replaceAll('@', '').trim() == _activeUsername));
+            final bool isJoined = isCreator || isMember;
 
-        // Join status is determined dynamically: creator ownership or explicit membership.
-        // Never bleed sticky local wasJoined so unjoined communities correctly show the 'Join' button.
-        final bool isJoined = isCreator || isMember;
-
-        final updated = rc.copyWith(isJoined: isJoined);
-        map[rc.id] = updated;
-        LocalStoreService().addCommunity(updated);
-        LocalStoreService().addLocation(rc.regionName);
-        final existingIdx = _communities.indexWhere((c) => c.id == rc.id);
-        if (existingIdx == -1 ||
-            _communities[existingIdx].isJoined != isJoined ||
-            _communities[existingIdx].memberCount != rc.memberCount) {
-          hasChanges = true;
-        }
-      }
-      if (hasChanges || _communities.length != map.length) {
-        _communities = map.values.toList();
-        _syncRegions();
-        notifyListeners();
-      }
-    } catch (_) {
-      // Fallback: If local backend is unreachable (e.g. on mobile data), fetch from Cloud Firestore!
-      if (Firebase.apps.isNotEmpty) {
-        try {
-          final snapshot = await FirebaseFirestore.instance.collection('communities').get();
-          final cleanUser = (_activeUserIdentifier ?? '').toLowerCase().replaceAll('@', '').trim();
-          bool hasChanges = false;
-          for (final doc in snapshot.docs) {
-            try {
-              final rc = Community.fromJson(doc.data());
-              final cName = rc.name.toLowerCase();
-              if (cName == 'abc' || cName == 'apc' || cName.contains('hustlers') || cName.contains('canteen') || cName.contains('robotics')) {
-                continue;
-              }
-
-              final cleanCreator = rc.creatorId.toLowerCase().replaceAll('@', '').trim();
-              final isCreator = (_activeUserId != null && _activeUserId!.isNotEmpty && cleanCreator == _activeUserId) ||
-                  (_activeUsername != null && _activeUsername!.isNotEmpty && cleanCreator == _activeUsername);
-              final isMember = (cleanUser.isNotEmpty && rc.members.any((m) => m.toLowerCase().replaceAll('@', '').trim() == cleanUser)) ||
-                  (_activeUserId != null && _activeUserId!.isNotEmpty && rc.members.any((m) => m.toLowerCase().replaceAll('@', '').trim() == _activeUserId)) ||
-                  (_activeUsername != null && _activeUsername!.isNotEmpty && rc.members.any((m) => m.toLowerCase().replaceAll('@', '').trim() == _activeUsername));
-              final bool isJoined = isCreator || isMember;
-
-              final updated = rc.copyWith(isJoined: isJoined);
-              final existingIdx = _communities.indexWhere((x) => x.id == updated.id);
-              if (existingIdx != -1) {
-                if (_communities[existingIdx].memberCount != updated.memberCount || _communities[existingIdx].isJoined != isJoined) {
-                  _communities[existingIdx] = updated;
-                  hasChanges = true;
-                }
-              } else {
-                _communities.insert(0, updated);
+            final updated = rc.copyWith(isJoined: isJoined);
+            final existingIdx = _communities.indexWhere((x) => x.id == updated.id);
+            if (existingIdx != -1) {
+              if (_communities[existingIdx].memberCount != updated.memberCount || _communities[existingIdx].isJoined != isJoined) {
+                _communities[existingIdx] = updated;
                 hasChanges = true;
               }
-              LocalStoreService().addCommunity(updated);
-              LocalStoreService().addLocation(updated.regionName);
-            } catch (_) {}
-          }
-          if (hasChanges) {
-            _syncRegions();
-            notifyListeners();
-          }
-        } catch (_) {}
+            } else {
+              _communities.insert(0, updated);
+              hasChanges = true;
+            }
+            LocalStoreService().addCommunity(updated);
+            LocalStoreService().addLocation(updated.regionName);
+          } catch (_) {}
+        }
+      } catch (e) {
+        debugPrint('[CommunityProvider] Firestore get communities error: $e');
       }
+    }
+
+    // 2. Also check API if local backend is running
+    try {
+      if (ApiService().isServerReachable) {
+        final remoteList = await ApiService().getCommunities(userIdentifier: _activeUserIdentifier);
+        for (final rc in remoteList) {
+          final cleanCreator = rc.creatorId.toLowerCase().replaceAll('@', '').trim();
+          final isCreator = (_activeUserId != null && _activeUserId!.isNotEmpty && cleanCreator == _activeUserId) ||
+              (_activeUsername != null && _activeUsername!.isNotEmpty && cleanCreator == _activeUsername);
+          final isMember = (cleanUser.isNotEmpty && rc.members.any((m) => m.toLowerCase().replaceAll('@', '').trim() == cleanUser)) ||
+              (_activeUserId != null && _activeUserId!.isNotEmpty && rc.members.any((m) => m.toLowerCase().replaceAll('@', '').trim() == _activeUserId)) ||
+              (_activeUsername != null && _activeUsername!.isNotEmpty && rc.members.any((m) => m.toLowerCase().replaceAll('@', '').trim() == _activeUsername));
+          final bool isJoined = isCreator || isMember;
+
+          final updated = rc.copyWith(isJoined: isJoined);
+          final existingIdx = _communities.indexWhere((x) => x.id == updated.id);
+          if (existingIdx == -1) {
+            _communities.insert(0, updated);
+            hasChanges = true;
+          }
+        }
+      }
+    } catch (_) {}
+
+    if (hasChanges) {
+      _syncRegions();
+      notifyListeners();
     }
   }
 

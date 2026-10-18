@@ -147,7 +147,9 @@ class _PeopleScreenState extends State<PeopleScreen> {
           // 2. Incoming Requests Banner (if any)
           if (currentUser != null)
             StreamBuilder<List<FriendRequest>>(
-              stream: _friendshipService.streamPendingIncomingRequests(currentUser.id),
+              stream: _friendshipService.streamPendingIncomingRequests(
+                currentUser.username.isNotEmpty ? currentUser.username : currentUser.id,
+              ),
               builder: (context, snapshot) {
                 final pending = snapshot.data ?? [];
                 if (pending.isEmpty) return const SizedBox.shrink();
@@ -514,6 +516,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
                         ),
                         ElevatedButton(
                           onPressed: () async {
+                            await context.read<AuthProvider>().respondFriendRequest(req.id, 'accepted', senderUsername: req.senderUsername);
                             await _friendshipService.acceptFriendRequest(req, currentUser);
                             if (ctx.mounted) Navigator.pop(ctx);
                           },
@@ -528,6 +531,7 @@ class _PeopleScreenState extends State<PeopleScreen> {
                         IconButton(
                           icon: const Icon(Icons.close_rounded, size: 18, color: Color(0xFF8B949E)),
                           onPressed: () async {
+                            await context.read<AuthProvider>().respondFriendRequest(req.id, 'declined', senderUsername: req.senderUsername);
                             await _friendshipService.declineFriendRequest(req.id);
                             if (ctx.mounted) Navigator.pop(ctx);
                           },
