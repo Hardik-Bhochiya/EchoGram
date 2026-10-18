@@ -583,10 +583,22 @@ class AuthProvider extends ChangeNotifier {
   bool areFriends(String username) {
     final clean = username.trim().toLowerCase().replaceAll('@', '');
     final myClean = _activeUsername.trim().toLowerCase().replaceAll('@', '');
+    if (clean.isEmpty || myClean.isEmpty) return false;
     if (clean == myClean) return true;
     if (_friendUsernamesSet.contains(clean)) return true;
     if (_friendsList.any((f) => f.username.toLowerCase().replaceAll('@', '') == clean)) return true;
-    return LocalStoreService().areFriends(myClean, clean);
+    if (LocalStoreService().areFriends(myClean, clean)) return true;
+
+    // Direct chat check: If two users are actively in a direct chat with exchanged messages, treat as friends
+    final directRoomId = ChatProvider.getDirectRoomId(myClean, clean);
+    final msgs = LocalStoreService().getMessages(directRoomId);
+    if (msgs.isNotEmpty) {
+      _friendUsernamesSet.add(clean);
+      LocalStoreService().addFriend(myClean, clean);
+      return true;
+    }
+
+    return false;
   }
 
   List<FriendRequest> getPendingIncomingRequests() {
@@ -623,7 +635,7 @@ class AuthProvider extends ChangeNotifier {
     final tUser = targetUsername.trim().toLowerCase().replaceAll('@', '');
     if (areFriends(tUser)) return false;
 
-    // Check live outgoing requests from Firestore
+    // Check live outgoing requests
     for (final r in _outgoingRequests) {
       if (r.receiverUsername.trim().toLowerCase().replaceAll('@', '') == tUser) {
         if (r.isDeclined) return false;
@@ -634,7 +646,7 @@ class AuthProvider extends ChangeNotifier {
     // Check local store
     final outgoing = LocalStoreService().getPendingOutgoingRequests(_activeUsername);
     return outgoing.any((r) =>
-        r.receiverUsername.trim().toLowerCase().replaceAll('@', '') == tUser && r.isPending);
+        r.receiverUsername.trim().toLowerCase().replaceAll('@', '') == tUser && r.isPending && !areFriends(tUser));
   }
 
   bool isPendingIncoming(String targetUsername) {
@@ -649,7 +661,7 @@ class AuthProvider extends ChangeNotifier {
 
     final incoming = LocalStoreService().getPendingIncomingRequests(_activeUsername);
     return incoming.any((r) =>
-        r.senderUsername.trim().toLowerCase().replaceAll('@', '') == tUser && r.isPending);
+        r.senderUsername.trim().toLowerCase().replaceAll('@', '') == tUser && r.isPending && !areFriends(tUser));
   }
 
   FriendRequest? getIncomingRequestFrom(String targetUsername) {
@@ -658,15 +670,15 @@ class AuthProvider extends ChangeNotifier {
       return _incomingRequests.firstWhere(
         (r) => r.senderUsername.trim().toLowerCase().replaceAll('@', '') == tUser && r.isPending,
       );
-    } catch (_) {}
-
-    final incoming = LocalStoreService().getPendingIncomingRequests(_activeUsername);
-    try {
-      return incoming.firstWhere(
-        (r) => r.senderUsername.trim().toLowerCase().replaceAll('@', '') == tUser && r.isPending,
-      );
     } catch (_) {
-      return null;
+      final local = LocalStoreService().getPendingIncomingRequests(_activeUsername);
+      try {
+        return local.firstWhere(
+          (r) => r.senderUsername.trim().toLowerCase().replaceAll('@', '') == tUser && r.isPending,
+        );
+      } catch (_) {
+        return null;
+      }
     }
   }
 
@@ -793,19 +805,60 @@ class AuthProvider extends ChangeNotifier {
     if (_currentUser == null) return;
     try {
       final username = _currentUser!.username;
-      final rawReqs = await ApiService().getFriendRequests(username);
-      for (final r in rawReqs) {
-        final req = FriendRequest.fromJson(r);
-        LocalStoreService().addFriendRequest(req);
-      }
+      final cleanMy = username.trim().toLowerCase().replaceAll('@', '');
 
+      // 1. Fetch real-time friends from backend MongoDB
       final friends = await ApiService().getFriends(username);
+      _friendsList.clear();
+      _friendUsernamesSet.clear();
       for (final f in friends) {
-        LocalStoreService().addFriend(username, f.username);
-        if (!_knownUsers.any((u) => u.username.toLowerCase() == f.username.toLowerCase())) {
+        final fClean = f.username.trim().toLowerCase().replaceAll('@', '');
+        _friendUsernamesSet.add(fClean);
+        _friendsList.add(f);
+        LocalStoreService().addFriend(cleanMy, fClean);
+        if (!_knownUsers.any((u) => u.username.toLowerCase() == fClean)) {
           _knownUsers.add(f);
         }
       }
+
+      // Also merge any friends already recorded in local store
+      final localFriendNames = LocalStoreService().getFriendUsernames(cleanMy);
+      for (final lfn in localFriendNames) {
+        final lClean = lfn.trim().toLowerCase().replaceAll('@', '');
+        _friendUsernamesSet.add(lClean);
+      }
+
+      // 2. Fetch friend requests from backend MongoDB
+      final rawReqs = await ApiService().getFriendRequests(username);
+      _incomingRequests.clear();
+      _outgoingRequests.clear();
+      for (final r in rawReqs) {
+        final req = FriendRequest.fromJson(r);
+        final sClean = req.senderUsername.trim().toLowerCase().replaceAll('@', '');
+        final rClean = req.receiverUsername.trim().toLowerCase().replaceAll('@', '');
+
+        // If they are already established friends, clear any pending request
+        if (_friendUsernamesSet.contains(sClean) || _friendUsernamesSet.contains(rClean)) {
+          LocalStoreService().cancelFriendRequest(sClean, rClean);
+          continue;
+        }
+
+        LocalStoreService().addFriendRequest(req);
+        if (req.isPending) {
+          if (rClean == cleanMy) {
+            _incomingRequests.add(req);
+          } else if (sClean == cleanMy) {
+            _outgoingRequests.add(req);
+          }
+        }
+      }
+
+      // Filter out any outgoing or incoming requests if already connected as friends
+      _outgoingRequests.removeWhere((r) =>
+          _friendUsernamesSet.contains(r.receiverUsername.trim().toLowerCase().replaceAll('@', '')));
+      _incomingRequests.removeWhere((r) =>
+          _friendUsernamesSet.contains(r.senderUsername.trim().toLowerCase().replaceAll('@', '')));
+
       notifyListeners();
     } catch (e) {
       debugPrint('[AuthProvider] syncFriendData error: $e');

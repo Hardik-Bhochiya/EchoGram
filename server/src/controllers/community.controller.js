@@ -94,22 +94,22 @@ exports.createCommunity = async (req, res) => {
     } = req.body;
 
     const commId = id || uuidv4();
-    const effectiveRegionName = regionName || 'DDU, Nadiad, Gujarat';
+    const effectiveRegionName = regionName || 'Global';
     const effectiveRegionId = regionId || `region_${effectiveRegionName.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
     const cleanCreator = (creatorId || 'user').toLowerCase().replace(/^@/, '');
 
     const newCommunityData = {
       id: commId,
-      name: name || 'Campus Community',
-      description: description || 'Local discussion space',
+      name: name || 'Community Group',
+      description: description || 'Discussion and updates space',
       regionId: effectiveRegionId,
       regionName: effectiveRegionName,
-      locationSpot: locationSpot || 'Campus / City Spot',
+      locationSpot: locationSpot || 'Everywhere',
       creatorId: cleanCreator,
-      category: category || 'Campus',
+      category: category || 'General',
       memberCount: 1,
       questionCount: 0,
-      iconEmoji: iconEmoji || '🎓',
+      iconEmoji: iconEmoji || '💬',
       bannerColorHex: bannerColorHex || 0xFF6366F1,
       rules: rules || [
         '1. Respect all members',
@@ -153,6 +153,17 @@ exports.createCommunity = async (req, res) => {
 
     const responseData = normalizeCommunity(newCommunityData, cleanCreator);
     responseData.isJoined = true;
+
+    // Real-time broadcast: notify all connected sockets that a new group has been created
+    try {
+      const io = req.app.get('io');
+      if (io) {
+        io.of('/chat').emit('community_created', responseData);
+        console.log(`[Socket.IO] Broadcasted community_created: "${responseData.name}" (${responseData.id})`);
+      }
+    } catch (socketErr) {
+      console.error('[Socket.IO community_created error]', socketErr.message);
+    }
 
     return res.status(201).json({
       success: true,

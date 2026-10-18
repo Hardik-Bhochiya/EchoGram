@@ -19,6 +19,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  final _locationController = TextEditingController();
   final _bioController = TextEditingController();
 
   bool _obscurePassword = true;
@@ -44,6 +45,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
+    _locationController.dispose();
     _bioController.dispose();
     super.dispose();
   }
@@ -118,6 +120,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
       final lName = _lastNameController.text.trim();
       final fullName = '$fName $lName'.trim();
 
+      // User explicitly entered location / city
+      final userLocation = _locationController.text.trim();
+
       final success = await auth.signUp(
         name: fullName,
         username: uName,
@@ -125,7 +130,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         lastName: lName,
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
-        campusOrCity: '',
+        campusOrCity: userLocation.isNotEmpty ? userLocation : 'Global',
         majorOrBio: bio,
       );
 
@@ -433,6 +438,38 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     validator: (v) {
                       if (v == null || v.trim().isEmpty) return 'Email is required';
                       if (!v.contains('@')) return 'Enter a valid email';
+                      return null;
+                    },
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Location / City * (User-specified, no hardcoded DDU default)
+                const Text(
+                  'LOCATION / CITY *',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF8B949E), letterSpacing: 0.6),
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF161B22),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFF30363D)),
+                  ),
+                  child: TextFormField(
+                    controller: _locationController,
+                    style: const TextStyle(color: Color(0xFFF0F6FC), fontSize: 14),
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.location_on_outlined, color: Color(0xFF58A6FF), size: 18),
+                      hintText: 'e.g. Nadiad, Ahmedabad, Mumbai',
+                      hintStyle: TextStyle(color: Color(0xFF8B949E), fontSize: 13),
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    ),
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) {
+                        return 'Please enter your location or city';
+                      }
                       return null;
                     },
                   ),

@@ -25,6 +25,7 @@ class SocketService {
   final _friendRequestReceivedController = StreamController<Map<String, dynamic>>.broadcast();
   final _friendRequestAcceptedController = StreamController<Map<String, dynamic>>.broadcast();
   final _friendRequestDeclinedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _communityCreatedController = StreamController<Map<String, dynamic>>.broadcast();
 
   Stream<ChatMessage> get onMessageReceived => _messageController.stream;
   Stream<Map<String, dynamic>> get onTypingStatus => _typingController.stream;
@@ -36,6 +37,7 @@ class SocketService {
   Stream<Map<String, dynamic>> get onFriendRequestReceived => _friendRequestReceivedController.stream;
   Stream<Map<String, dynamic>> get onFriendRequestAccepted => _friendRequestAcceptedController.stream;
   Stream<Map<String, dynamic>> get onFriendRequestDeclined => _friendRequestDeclinedController.stream;
+  Stream<Map<String, dynamic>> get onCommunityCreated => _communityCreatedController.stream;
 
   bool get isConnected => _isConnected;
 
@@ -166,6 +168,15 @@ class SocketService {
           final map = Map<String, dynamic>.from(data);
           _friendRequestDeclinedController.add(map);
           debugPrint('[SocketService] Received friend_request_declined: ${map['senderUsername']} & ${map['receiverUsername']}');
+        }
+      });
+
+      // Real-time group / community creation broadcast so other users see it immediately
+      _socket?.on('community_created', (data) {
+        if (data != null && data is Map) {
+          final map = Map<String, dynamic>.from(data);
+          _communityCreatedController.add(map);
+          debugPrint('[SocketService] Received community_created: ${map['name']} (${map['id']})');
         }
       });
     } catch (e) {

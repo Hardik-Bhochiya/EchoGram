@@ -7,6 +7,7 @@ import '../models/region.dart';
 import '../models/community.dart';
 import '../services/local_store_service.dart';
 import '../services/api_service.dart';
+import '../services/socket_service.dart';
 
 class CommunityProvider extends ChangeNotifier {
   List<Region> _regions = [];
@@ -16,6 +17,7 @@ class CommunityProvider extends ChangeNotifier {
   String _searchQuery = '';
   Timer? _syncTimer;
   StreamSubscription? _firestoreSub;
+  StreamSubscription? _socketCommunitySub;
   String? _activeUserIdentifier;
 
   List<Region> get regions => _regions;
@@ -27,9 +29,33 @@ class CommunityProvider extends ChangeNotifier {
   CommunityProvider() {
     _loadCommunities();
     _initFirestoreListener();
+    _initSocketListener();
     _syncTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (Firebase.apps.isEmpty) {
         refreshCommunities(userIdentifier: _activeUserIdentifier);
+      }
+    });
+  }
+
+  void _initSocketListener() {
+    _socketCommunitySub?.cancel();
+    // Real-time group / community addition listener from Socket.IO:
+    // When another account creates a group, it immediately appears on this client without any page refresh!
+    _socketCommunitySub = SocketService().onCommunityCreated.listen((data) {
+      try {
+        final newComm = Community.fromJson(data);
+        final existingIdx = _communities.indexWhere((c) => c.id == newComm.id);
+        if (existingIdx != -1) {
+          _communities[existingIdx] = newComm;
+        } else {
+          _communities.insert(0, newComm);
+        }
+        LocalStoreService().addCommunity(newComm);
+        _syncRegions();
+        notifyListeners();
+        debugPrint('[CommunityProvider] Real-time community received & added without refresh: "${newComm.name}" (${newComm.id})');
+      } catch (e) {
+        debugPrint('[CommunityProvider] onCommunityCreated processing error: $e');
       }
     });
   }
@@ -38,6 +64,7 @@ class CommunityProvider extends ChangeNotifier {
   void dispose() {
     _syncTimer?.cancel();
     _firestoreSub?.cancel();
+    _socketCommunitySub?.cancel();
     super.dispose();
   }
 

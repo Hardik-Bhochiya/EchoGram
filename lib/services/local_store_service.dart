@@ -9,7 +9,6 @@ import '../models/chat_room.dart';
 import '../models/chat_message.dart';
 import '../models/friend_request.dart';
 import '../models/user.dart';
-import 'mock_data_service.dart';
 
 /// LocalStoreService delivers permanent offline persistence on physical mobile
 /// devices with zero requirement for an active laptop or local server.
@@ -838,7 +837,15 @@ class LocalStoreService {
     _userFriends.putIfAbsent(u2, () => []);
     if (!_userFriends[u2]!.contains(u1)) _userFriends[u2]!.add(u1);
 
+    // Purge any lingering friend requests between them
+    _friendRequests.removeWhere((r) {
+      final rs = r.senderUsername.trim().toLowerCase().replaceAll('@', '');
+      final rr = r.receiverUsername.trim().toLowerCase().replaceAll('@', '');
+      return (rs == u1 && rr == u2) || (rs == u2 && rr == u1);
+    });
+
     _persistUserFriends();
+    _persistFriendRequests();
   }
 
   void removeFriend(String username1, String username2) {

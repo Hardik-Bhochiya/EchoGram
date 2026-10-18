@@ -206,7 +206,12 @@ class ChatProvider extends ChangeNotifier {
       final serverDislikes = data['dislikes'] != null ? List<String>.from(data['dislikes']) : null;
 
       if (roomId != null && messageId != null) {
-        final list = _messages[roomId];
+        var list = _messages[roomId];
+        if (list == null) {
+          _messages[roomId] = LocalStoreService().getMessages(roomId);
+          list = _messages[roomId];
+        }
+
         if (list != null) {
           final idx = list.indexWhere((m) => m.id == messageId);
           if (idx != -1) {
@@ -231,6 +236,8 @@ class ChatProvider extends ChangeNotifier {
             list[idx] = cur.copyWith(likes: finalLikes, dislikes: finalDislikes);
             LocalStoreService().updateMessageLikes(roomId, messageId, finalLikes, finalDislikes);
             notifyListeners();
+          } else if (serverLikes != null && serverDislikes != null) {
+            LocalStoreService().updateMessageLikes(roomId, messageId, serverLikes, serverDislikes);
           }
         }
       }
@@ -245,7 +252,12 @@ class ChatProvider extends ChangeNotifier {
       final serverDislikes = data['dislikes'] != null ? List<String>.from(data['dislikes']) : null;
 
       if (roomId != null && messageId != null) {
-        final list = _messages[roomId];
+        var list = _messages[roomId];
+        if (list == null) {
+          _messages[roomId] = LocalStoreService().getMessages(roomId);
+          list = _messages[roomId];
+        }
+
         if (list != null) {
           final idx = list.indexWhere((m) => m.id == messageId);
           if (idx != -1) {
@@ -270,6 +282,8 @@ class ChatProvider extends ChangeNotifier {
             list[idx] = cur.copyWith(likes: finalLikes, dislikes: finalDislikes);
             LocalStoreService().updateMessageLikes(roomId, messageId, finalLikes, finalDislikes);
             notifyListeners();
+          } else if (serverLikes != null && serverDislikes != null) {
+            LocalStoreService().updateMessageLikes(roomId, messageId, serverLikes, serverDislikes);
           }
         }
       }
