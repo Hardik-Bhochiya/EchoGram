@@ -8,6 +8,7 @@ plugins {
 android {
     namespace = "com.neartalk.app.neartalk"
     compileSdk = flutter.compileSdkVersion
+    buildToolsVersion = "36.0.0"
     // ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -36,6 +37,18 @@ android {
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
         }
+    }
+
+    packaging {
+        jniLibs {
+            keepDebugSymbols += "**/*.so"
+        }
+    }
+}
+
+gradle.taskGraph.whenReady {
+    tasks.matching { it.name.contains("strip", ignoreCase = true) }.configureEach {
+        enabled = false
     }
 }
 

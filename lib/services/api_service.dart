@@ -16,25 +16,44 @@ class ApiService {
   factory ApiService() => _instance;
   ApiService._internal();
 
+  static const String defaultLanIp = '192.168.101.108';
+  String? _resolvedBaseHost;
+
   bool _isServerReachable = false;
   bool _hasCheckedReachability = false;
 
   bool get isServerReachable => _isServerReachable;
 
-  String get baseUrl {
+  /// Returns the base server URL without trailing slash or /api, suitable for both HTTP and Socket.IO
+  String get activeBaseHost {
     final customUrl = LocalStoreService().customBackendUrl;
     if (customUrl != null && customUrl.isNotEmpty) {
-      return customUrl.endsWith('/api') ? customUrl : '$customUrl/api';
+      return customUrl.endsWith('/api')
+          ? customUrl.substring(0, customUrl.length - 4)
+          : customUrl;
+    }
+
+    const envUrl = String.fromEnvironment('BACKEND_URL');
+    if (envUrl.isNotEmpty) {
+      return envUrl.endsWith('/api')
+          ? envUrl.substring(0, envUrl.length - 4)
+          : envUrl;
     }
 
     if (kIsWeb) {
       final host = Uri.base.host.isNotEmpty ? Uri.base.host : 'localhost';
-      return 'http://$host:5000/api';
+      return 'http://$host:5000';
     }
-    return defaultTargetPlatform == TargetPlatform.android
-        ? 'http://10.0.2.2:5000/api'
-        : 'http://localhost:5000/api';
+
+    if (_resolvedBaseHost != null) {
+      return _resolvedBaseHost!;
+    }
+
+    // Default for Android & other platforms is the host machine's Wi-Fi LAN IP
+    return 'http://$defaultLanIp:5000';
   }
+
+  String get baseUrl => '$activeBaseHost/api';
 
   String? _authToken;
 
@@ -45,18 +64,56 @@ class ApiService {
     await checkServerReachability();
   }
 
-  /// Fast 600ms non-blocking check to determine if an active backend server is connected
+  /// Fast non-blocking check to determine if an active backend server is connected.
+  /// On mobile/Android, it intelligently auto-probes candidate hosts (LAN IP, USB adb reverse, and emulator).
   Future<bool> checkServerReachability() async {
-    try {
-      final response = await http
-          .get(Uri.parse('$baseUrl/health'))
-          .timeout(const Duration(milliseconds: 650));
-      _isServerReachable = response.statusCode == 200;
-    } catch (_) {
-      _isServerReachable = false;
+    final customUrl = LocalStoreService().customBackendUrl;
+    const envUrl = String.fromEnvironment('BACKEND_URL');
+
+    // If explicit URL is provided or on Web, check active baseUrl directly
+    if ((customUrl != null && customUrl.isNotEmpty) || envUrl.isNotEmpty || kIsWeb) {
+      try {
+        final response = await http
+            .get(Uri.parse('$baseUrl/health'))
+            .timeout(const Duration(milliseconds: 700));
+        _isServerReachable = response.statusCode == 200;
+      } catch (_) {
+        _isServerReachable = false;
+      }
+      _hasCheckedReachability = true;
+      return _isServerReachable;
     }
+
+    // For Android / Mobile, probe candidate hosts in priority order:
+    // 1. Host machine LAN IP (same Wi-Fi network)
+    // 2. Localhost / 127.0.0.1 (works with USB cable via 'adb reverse tcp:5000 tcp:5000')
+    // 3. 10.0.2.2 (Android Studio Emulator router)
+    final candidates = [
+      'http://$defaultLanIp:5000',
+      'http://127.0.0.1:5000',
+      'http://10.0.2.2:5000',
+    ];
+
+    for (final host in candidates) {
+      try {
+        final response = await http
+            .get(Uri.parse('$host/api/health'))
+            .timeout(const Duration(milliseconds: 500));
+        if (response.statusCode == 200) {
+          _resolvedBaseHost = host;
+          _isServerReachable = true;
+          _hasCheckedReachability = true;
+          return true;
+        }
+      } catch (_) {
+        // Continue probing next candidate
+      }
+    }
+
+    _resolvedBaseHost = 'http://$defaultLanIp:5000';
+    _isServerReachable = false;
     _hasCheckedReachability = true;
-    return _isServerReachable;
+    return false;
   }
 
   Future<void> setAuthToken(String token) async {

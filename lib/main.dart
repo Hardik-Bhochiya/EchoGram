@@ -55,8 +55,7 @@ void main() async {
     debugPrint('Firebase initialization notice: $e');
   }
 
-  // Non-blocking purge attempt of legacy cloud data
-  _wipeAllFirestoreData();
+  // Database is active and persists online data
   await LocalStoreService().init();
   await ApiService().init();
 

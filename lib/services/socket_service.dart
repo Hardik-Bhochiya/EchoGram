@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../models/chat_message.dart';
 import 'local_store_service.dart';
+import 'api_service.dart';
 
 class SocketService {
   static final SocketService _instance = SocketService._internal();
@@ -45,23 +46,7 @@ class SocketService {
 
   bool get isConnected => _isConnected;
 
-  String get socketUrl {
-    final customUrl = LocalStoreService().customBackendUrl;
-    if (customUrl != null && customUrl.isNotEmpty) {
-      final base = customUrl.endsWith('/api')
-          ? customUrl.substring(0, customUrl.length - 4)
-          : customUrl;
-      return '$base/chat';
-    }
-
-    if (kIsWeb) {
-      final host = Uri.base.host.isNotEmpty ? Uri.base.host : 'localhost';
-      return 'http://$host:5000/chat';
-    }
-    return defaultTargetPlatform == TargetPlatform.android
-        ? 'http://10.0.2.2:5000/chat'
-        : 'http://localhost:5000/chat';
-  }
+  String get socketUrl => '${ApiService().activeBaseHost}/chat';
 
   void connect() {
     if (disabledForTests || (_socket != null && _isConnected)) return;

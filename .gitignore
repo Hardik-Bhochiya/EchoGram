@@ -26,6 +26,9 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
+android/build/
+.gradle/
+android/.gradle/
 /coverage/
 
 # Node.js Server
