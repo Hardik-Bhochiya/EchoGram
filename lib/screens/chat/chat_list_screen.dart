@@ -181,6 +181,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
     final Map<String, _UnifiedChatItem> itemMap = {};
 
     for (final room in chatProvider.rooms) {
+      // Exclude rogue direct rooms with accidental 'room-dm-' prefix or generic 'Chat' title
+      if (room.id.startsWith('room-dm-') || room.title.trim().toLowerCase() == 'chat') {
+        continue;
+      }
       final lastMsg = chatProvider.getLastMessage(room.id);
       final hasLastMsg = lastMsg != null && lastMsg.content.trim().isNotEmpty;
       final lastText = hasLastMsg ? lastMsg.content : room.lastMessage;
@@ -301,6 +305,19 @@ class _ChatListScreenState extends State<ChatListScreen> {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const SearchScreen()),
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_sweep_rounded, color: Color(0xFF8B949E), size: 22),
+            tooltip: 'Clear All Chats',
+            onPressed: () {
+              chatProvider.clearAllRooms();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('All chats cleanly wiped.'),
+                  backgroundColor: Color(0xFF238636),
+                ),
               );
             },
           ),

@@ -88,11 +88,11 @@ class PostOptionsSheet extends StatelessWidget {
             ListTile(
               leading: const Icon(Icons.flag_outlined, color: Colors.redAccent),
               title: const Text('Report Post', style: TextStyle(color: Colors.redAccent)),
-              subtitle: const Text('Report spam, abuse, or violation of DDU community guidelines', style: TextStyle(fontSize: 12)),
+              subtitle: const Text('Report spam, abuse, or violation of community guidelines', style: TextStyle(fontSize: 12)),
               onTap: () {
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Report submitted to DDU student moderators')),
+                  const SnackBar(content: Text('Report submitted to moderators')),
                 );
               },
             ),

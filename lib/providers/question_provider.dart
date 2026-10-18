@@ -38,39 +38,15 @@ class QuestionProvider extends ChangeNotifier {
   }
 
   void _initFirestoreListener() {
-    if (Firebase.apps.isEmpty) return;
-    try {
-      _firestoreSub?.cancel();
-      _firestoreSub = FirebaseFirestore.instance
-          .collection('questions')
-          .snapshots()
-          .listen((snap) {
-        if (snap.docs.isEmpty) return;
-        final firestoreList = <Question>[];
-        for (final doc in snap.docs) {
-          try {
-            final data = doc.data();
-            data['id'] = doc.id;
-            final q = Question.fromJson(data);
-            firestoreList.add(q);
-            LocalStoreService().updateQuestion(q);
-          } catch (_) {}
-        }
-        if (firestoreList.isNotEmpty) {
-          _questions = firestoreList;
-          notifyListeners();
-        }
-      }, onError: (_) {});
-    } catch (_) {}
+    _firestoreSub?.cancel();
+    // Bypassed: Questions sync directly with local MongoDB via ApiService.
+    return;
   }
 
   Future<void> _loadQuestions() async {
     _isLoading = true;
     // 1. Immediately load local persisted questions (zero delay, fully offline capable)
     _questions = LocalStoreService().getQuestions();
-    if (_questions.isEmpty) {
-      _questions = List.from(MockDataService.initialQuestions);
-    }
     _isLoading = false;
     notifyListeners();
 

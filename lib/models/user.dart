@@ -138,7 +138,7 @@ class User {
       lastName: lName,
       email: json['email'] as String? ?? '',
       avatarUrl: json['avatarUrl'] as String? ?? json['photoUrl'] as String?,
-      campusOrCity: json['campusOrCity'] as String? ?? json['city'] as String? ?? 'DDU, Nadiad',
+      campusOrCity: json['campusOrCity'] as String? ?? json['city'] as String? ?? 'Global',
       majorOrBio: json['majorOrBio'] as String? ?? json['bio'] as String?,
       reputation: json['reputation'] as int? ?? 50,
       joinedCommunityIds: List<String>.from(json['joinedCommunityIds'] ?? []),

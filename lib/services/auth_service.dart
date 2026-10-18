@@ -90,7 +90,7 @@ class AuthService {
       final parts = name.trim().split(' ');
       final resolvedFirst = firstName ?? (parts.isNotEmpty ? parts.first : 'User');
       final resolvedLast = lastName ?? (parts.length > 1 ? parts.sublist(1).join(' ') : '');
-      final campus = campusOrCity ?? 'DDU, Nadiad';
+      final campus = campusOrCity ?? 'Global';
 
       final newUser = User(
         id: fbUser.uid,
@@ -104,7 +104,7 @@ class AuthService {
         reputation: 50,
         joinedCommunityIds: const [],
         badges: const ['Newcomer'],
-        isCollegeVerified: email.contains('ddu.ac.in') || email.contains('edu'),
+        isCollegeVerified: true,
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );
@@ -207,7 +207,7 @@ class AuthService {
           username: uname.isEmpty ? 'user' : uname,
           name: dName,
           email: fbUser.email ?? resolvedEmail,
-          campusOrCity: 'DDU, Nadiad',
+          campusOrCity: 'Global',
           majorOrBio: 'EchoGram Member',
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),

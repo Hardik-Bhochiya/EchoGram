@@ -236,7 +236,7 @@ class _AskQuestionScreenState extends State<AskQuestionScreen> {
                       child: TextField(
                         controller: _tagInputController,
                         decoration: InputDecoration(
-                          hintText: 'Type custom tag (e.g. DDU_Exam)...',
+                          hintText: 'Type custom tag (e.g. Tech, General)...',
                           contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                           filled: true,
                           fillColor: isDark ? const Color(0xFF151C2C) : Colors.white,

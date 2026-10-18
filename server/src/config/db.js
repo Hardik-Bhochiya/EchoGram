@@ -1,24 +1,30 @@
 const mongoose = require('mongoose');
-const Community = require('../models/Community');
-const { Question } = require('../models/Question');
-const User = require('../models/User');
-const store = require('../controllers/store');
-
-let isConnected = false;
 
 const connectDB = async () => {
-  const uri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/echogram';
+  const uri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/neartalk';
   try {
     const conn = await mongoose.connect(uri, {
-      serverSelectionTimeoutMS: 2000,
+      serverSelectionTimeoutMS: 2500,
+      socketTimeoutMS: 15000,
+      maxPoolSize: 25,
+      minPoolSize: 2,
     });
-    isConnected = true;
     console.log(`[Database] MongoDB Connected: ${conn.connection.host}`);
   } catch (err) {
     console.log(`[Database] Live MongoDB not reachable (${err.message}).`);
     console.log(`[Database] Running in-memory database store for seamless local execution.`);
-    isConnected = false;
   }
+
+  mongoose.connection.on('error', (err) => {
+    console.error(`[Database Error] ${err.message}`);
+  });
+
+  mongoose.connection.on('disconnected', () => {
+    console.log('[Database] MongoDB connection lost. Falling back to in-memory store.');
+  });
 };
 
-module.exports = { connectDB, isConnected: () => isConnected };
+module.exports = {
+  connectDB,
+  isConnected: () => mongoose.connection.readyState === 1,
+};

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/user.dart';
@@ -22,6 +23,7 @@ class _SearchScreenState extends State<SearchScreen> {
   List<User> _suggestedUsers = [];
   bool _isLoading = false;
   int _searchSession = 0;
+  Timer? _debounceTimer;
 
   @override
   void initState() {
@@ -31,6 +33,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -50,7 +53,8 @@ class _SearchScreenState extends State<SearchScreen> {
     } catch (_) {}
   }
 
-  void _onSearchQueryChanged(String val, String? currentUserId, String? currentUsername) async {
+  void _onSearchQueryChanged(String val, String? currentUserId, String? currentUsername) {
+    _debounceTimer?.cancel();
     final sessionId = ++_searchSession;
     setState(() {
       _query = val;
@@ -66,17 +70,19 @@ class _SearchScreenState extends State<SearchScreen> {
       return;
     }
 
-    final results = await _userService.searchUsers(
-      clean,
-      currentUserId: currentUserId,
-      currentUsername: currentUsername,
-    );
-    if (mounted && sessionId == _searchSession) {
-      setState(() {
-        _remoteUsers = results;
-        _isLoading = false;
-      });
-    }
+    _debounceTimer = Timer(const Duration(milliseconds: 300), () async {
+      final results = await _userService.searchUsers(
+        clean,
+        currentUserId: currentUserId,
+        currentUsername: currentUsername,
+      );
+      if (mounted && sessionId == _searchSession) {
+        setState(() {
+          _remoteUsers = results;
+          _isLoading = false;
+        });
+      }
+    });
   }
 
   bool _isSelf(User u, User? currentUser) {

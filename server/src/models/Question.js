@@ -33,6 +33,9 @@ const questionSchema = new mongoose.Schema({
   bookmarkedBy: [{ type: String }],
 }, { timestamps: true });
 
+questionSchema.index({ communityId: 1, createdAt: -1 });
+questionSchema.index({ regionId: 1 });
+
 module.exports = {
   Question: mongoose.model('Question', questionSchema),
   Reply: mongoose.model('Reply', replySchema),

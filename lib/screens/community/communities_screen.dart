@@ -162,7 +162,7 @@ class _CommunitiesScreenState extends State<CommunitiesScreen> with SingleTicker
 
   void _showCreateCommunityDialog() {
     final nameController = TextEditingController();
-    final locationController = TextEditingController(text: 'DDU Nadiad, Gujarat');
+    final locationController = TextEditingController(text: 'General');
     final descController = TextEditingController();
     final rulesController = TextEditingController(
       text: '1. Treat all members with respect and courtesy.\n2. No abusive language, harassment, or hate speech.\n3. No commercial spam or unauthorized promotions.\n4. Keep discussions genuine and relevant.',

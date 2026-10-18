@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import '../models/chat_message.dart';
@@ -23,6 +25,7 @@ class ChatProvider extends ChangeNotifier {
   StreamSubscription<Map<String, dynamic>>? _likeSub;
   StreamSubscription<Map<String, dynamic>>? _dislikeSub;
   StreamSubscription<Map<String, dynamic>>? _seenSub;
+  StreamSubscription<Map<String, dynamic>>? _frAcceptedSub;
   String? _currentUsername;
   StreamSubscription? _userFirestoreMessagesSub;
 
@@ -51,98 +54,20 @@ class ChatProvider extends ChangeNotifier {
 
   void _initUserFirestoreSync(String myUsername) {
     _userFirestoreMessagesSub?.cancel();
-    if (Firebase.apps.isEmpty || myUsername.isEmpty) return;
-
-    try {
-      _userFirestoreMessagesSub = FirebaseFirestore.instance
-          .collection('messages')
-          .snapshots()
-          .listen((snap) {
-        bool changed = false;
-        for (final doc in snap.docs) {
-          final data = doc.data();
-          final rId = (data['roomId'] as String? ?? '').toLowerCase();
-
-          // Check if this message belongs to a DM involving this user
-          final isMyDm = rId.startsWith('dm-') &&
-              (rId.startsWith('dm-${myUsername}_') ||
-               rId.endsWith('_$myUsername') ||
-               rId.contains('_${myUsername}_'));
-
-          if (isMyDm) {
-            final msg = ChatMessage.fromJson({
-              ...data,
-              'id': doc.id,
-            });
-
-            if (!_messages.containsKey(rId)) {
-              _messages[rId] = [];
-            }
-
-            final existingIdx = _messages[rId]!.indexWhere((m) =>
-                m.id == msg.id ||
-                (m.senderId == msg.senderId &&
-                    m.content.trim() == msg.content.trim() &&
-                    m.timestamp.difference(msg.timestamp).abs().inSeconds < 5));
-            if (existingIdx == -1) {
-              _messages[rId]!.add(msg);
-              LocalStoreService().addMessage(msg);
-              changed = true;
-            }
-
-            // Ensure room exists in _rooms
-            final otherUname = getOtherUsernameFromDmRoomId(rId, myUsername) ?? '';
-            final roomIdx = _rooms.indexWhere((r) => r.id == rId);
-            if (roomIdx == -1) {
-              final newRoom = ChatRoom(
-                id: rId,
-                title: otherUname.isNotEmpty ? '@$otherUname' : (msg.senderName.startsWith('@') ? msg.senderName : '@${msg.senderName}'),
-                subtitle: 'Direct Message',
-                avatarEmoji: '👤',
-                isGroup: false,
-                lastMessage: msg.content,
-                lastMessageTime: msg.timestamp,
-                unreadCount: 0,
-                isOnline: true,
-                participantIds: [msg.senderId],
-              );
-              _rooms.insert(0, newRoom);
-              LocalStoreService().addOrUpdateRoom(newRoom);
-              changed = true;
-            } else {
-              // Update last message if newer
-              final currentRoom = _rooms[roomIdx];
-              if (msg.timestamp.isAfter(currentRoom.lastMessageTime)) {
-                _rooms[roomIdx] = currentRoom.copyWith(
-                  lastMessage: msg.content,
-                  lastMessageTime: msg.timestamp,
-                );
-                LocalStoreService().addOrUpdateRoom(_rooms[roomIdx]);
-                changed = true;
-              }
-            }
-          }
-        }
-
-        if (changed) {
-          _rooms.sort((a, b) => b.lastMessageTime.compareTo(a.lastMessageTime));
-          notifyListeners();
-        }
-      }, onError: (err) {
-        debugPrint('[ChatProvider] Firestore messages stream notice: $err');
-      });
-    } catch (e) {
-      debugPrint('[ChatProvider] _initUserFirestoreSync error: $e');
-    }
+    // Bypassed: Real-time messaging uses local Socket.IO and MongoDB.
+    return;
   }
 
   void _initChat() {
-    // 1. Immediately load rooms from local storage (purge dummy rooms)
+    // 1. Immediately load rooms from local storage (purge dummy and rogue rooms)
     _rooms = LocalStoreService().getChatRooms().where((r) {
       final t = r.title.toLowerCase();
       final s = r.subtitle?.toLowerCase() ?? '';
       final id = r.id.toLowerCase();
-      if (t.contains('rahul') ||
+      if (id.startsWith('room-dm-') ||
+          t == 'chat' ||
+          t.endsWith(' chat') ||
+          t.contains('rahul') ||
           t.contains('canteen') ||
           t.contains('mumbai developer') ||
           t.contains('hostel group') ||
@@ -173,7 +98,6 @@ class ChatProvider extends ChangeNotifier {
               m.content == msg.content &&
               m.timestamp.difference(msg.timestamp).abs().inSeconds < 5));
       if (existingIdx != -1) {
-        // If message already exists (e.g. sent optimistically), sync without duplicating
         _messages[msg.roomId]![existingIdx] = msg;
         LocalStoreService().addMessage(msg);
         notifyListeners();
@@ -278,22 +202,34 @@ class ChatProvider extends ChangeNotifier {
       final roomId = data['roomId'] as String?;
       final messageId = data['messageId'] as String?;
       final userId = data['userId'] as String?;
+      final serverLikes = data['likes'] != null ? List<String>.from(data['likes']) : null;
+      final serverDislikes = data['dislikes'] != null ? List<String>.from(data['dislikes']) : null;
 
-      if (roomId != null && messageId != null && userId != null) {
+      if (roomId != null && messageId != null) {
         final list = _messages[roomId];
         if (list != null) {
           final idx = list.indexWhere((m) => m.id == messageId);
           if (idx != -1) {
             final cur = list[idx];
-            final likes = List<String>.from(cur.likes);
-            final dislikes = List<String>.from(cur.dislikes);
-            dislikes.remove(userId);
-            if (likes.contains(userId)) {
-              likes.remove(userId);
+            List<String> finalLikes;
+            List<String> finalDislikes;
+            if (serverLikes != null && serverDislikes != null) {
+              finalLikes = serverLikes;
+              finalDislikes = serverDislikes;
+            } else if (userId != null) {
+              finalLikes = List<String>.from(cur.likes);
+              finalDislikes = List<String>.from(cur.dislikes);
+              finalDislikes.remove(userId);
+              if (finalLikes.contains(userId)) {
+                finalLikes.remove(userId);
+              } else {
+                finalLikes.add(userId);
+              }
             } else {
-              likes.add(userId);
+              return;
             }
-            list[idx] = cur.copyWith(likes: likes, dislikes: dislikes);
+            list[idx] = cur.copyWith(likes: finalLikes, dislikes: finalDislikes);
+            LocalStoreService().updateMessageLikes(roomId, messageId, finalLikes, finalDislikes);
             notifyListeners();
           }
         }
@@ -305,25 +241,71 @@ class ChatProvider extends ChangeNotifier {
       final roomId = data['roomId'] as String?;
       final messageId = data['messageId'] as String?;
       final userId = data['userId'] as String?;
+      final serverLikes = data['likes'] != null ? List<String>.from(data['likes']) : null;
+      final serverDislikes = data['dislikes'] != null ? List<String>.from(data['dislikes']) : null;
 
-      if (roomId != null && messageId != null && userId != null) {
+      if (roomId != null && messageId != null) {
         final list = _messages[roomId];
         if (list != null) {
           final idx = list.indexWhere((m) => m.id == messageId);
           if (idx != -1) {
             final cur = list[idx];
-            final likes = List<String>.from(cur.likes);
-            final dislikes = List<String>.from(cur.dislikes);
-            likes.remove(userId);
-            if (dislikes.contains(userId)) {
-              dislikes.remove(userId);
+            List<String> finalLikes;
+            List<String> finalDislikes;
+            if (serverLikes != null && serverDislikes != null) {
+              finalLikes = serverLikes;
+              finalDislikes = serverDislikes;
+            } else if (userId != null) {
+              finalLikes = List<String>.from(cur.likes);
+              finalDislikes = List<String>.from(cur.dislikes);
+              finalLikes.remove(userId);
+              if (finalDislikes.contains(userId)) {
+                finalDislikes.remove(userId);
+              } else {
+                finalDislikes.add(userId);
+              }
             } else {
-              dislikes.add(userId);
+              return;
             }
-            list[idx] = cur.copyWith(likes: likes, dislikes: dislikes);
+            list[idx] = cur.copyWith(likes: finalLikes, dislikes: finalDislikes);
+            LocalStoreService().updateMessageLikes(roomId, messageId, finalLikes, finalDislikes);
             notifyListeners();
           }
         }
+      }
+    });
+
+    // Handle real-time friend request accepted: dynamically add DM room to chat list for both peers
+    _frAcceptedSub = SocketService().onFriendRequestAccepted.listen((data) async {
+      try {
+        final sUser = (data['senderUsername'] as String? ?? '').trim().toLowerCase().replaceAll('@', '');
+        final rUser = (data['receiverUsername'] as String? ?? '').trim().toLowerCase().replaceAll('@', '');
+        
+        // Ensure my username is available; fallback to cached session if ChatProvider was newly created
+        String cleanMy = (_currentUsername ?? '').trim().toLowerCase().replaceAll('@', '');
+        if (cleanMy.isEmpty) {
+          final prefs = await SharedPreferences.getInstance();
+          final saved = prefs.getString('saved_user');
+          if (saved != null) {
+            final u = jsonDecode(saved);
+            final uname = u['username'] as String?;
+            if (uname != null && uname.isNotEmpty) {
+              cleanMy = uname.toLowerCase().replaceAll('@', '').trim();
+              _currentUsername = cleanMy;
+            }
+          }
+        }
+
+        // Determine who the other peer is in this accepted friendship
+        final otherUname = (sUser == cleanMy) ? rUser : (rUser == cleanMy ? sUser : '');
+        if (otherUname.isNotEmpty) {
+          final directRoomId = getDirectRoomId(cleanMy, otherUname);
+          // Auto-instantiate the direct conversation room and dynamically update the UI
+          getOrCreateDirectRoom(directRoomId, cleanMy, otherUsername: otherUname);
+          debugPrint('[ChatProvider] Dynamically created direct room $directRoomId for @$otherUname');
+        }
+      } catch (e) {
+        debugPrint('[ChatProvider] onFriendRequestAccepted error: $e');
       }
     });
 
@@ -415,6 +397,33 @@ class ChatProvider extends ChangeNotifier {
     return existing;
   }
 
+  ChatRoom getOrCreateDirectRoom(String roomId, String currentUsername, {String? otherUsername, String? otherName}) {
+    final existingIdx = _rooms.indexWhere((r) => r.id == roomId);
+    if (existingIdx != -1) {
+      return _rooms[existingIdx];
+    }
+    final other = (otherUsername ?? getOtherUsernameFromDmRoomId(roomId, currentUsername) ?? 'Member')
+        .toLowerCase()
+        .replaceAll('@', '')
+        .trim();
+    final newRoom = ChatRoom(
+      id: roomId,
+      title: '@$other',
+      subtitle: (otherName != null && otherName.isNotEmpty) ? otherName : '@$other',
+      avatarEmoji: '👤',
+      isGroup: false,
+      lastMessage: 'You are connected! Say hello 👋',
+      lastMessageTime: DateTime.now(),
+      unreadCount: 0,
+      isOnline: true,
+      participantIds: [currentUsername, other],
+    );
+    _rooms.insert(0, newRoom);
+    LocalStoreService().addOrUpdateRoom(newRoom);
+    notifyListeners();
+    return newRoom;
+  }
+
   void markRoomAsRead(String roomId) {
     final index = _rooms.indexWhere((r) => r.id == roomId);
     if (index != -1 && _rooms[index].unreadCount > 0) {
@@ -460,8 +469,8 @@ class ChatProvider extends ChangeNotifier {
                 _messages[roomId]!.add(m);
                 hasNew = true;
               }
-              LocalStoreService().addMessage(m);
             }
+            LocalStoreService().addMessages(msgs);
             if (hasNew) {
               _messages[roomId]!.sort((a, b) => a.timestamp.compareTo(b.timestamp));
               notifyListeners();
@@ -499,42 +508,17 @@ class ChatProvider extends ChangeNotifier {
     _listenToRoomFirestore(roomId);
   }
 
+  void clearAllRooms() {
+    _rooms = [];
+    _messages.clear();
+    LocalStoreService().clearChatData();
+    notifyListeners();
+  }
+
   void _listenToRoomFirestore(String roomId) {
-    if (Firebase.apps.isEmpty || _roomFirestoreSubs.containsKey(roomId)) return;
-    try {
-      final sub = FirebaseFirestore.instance
-          .collection('messages')
-          .where('roomId', isEqualTo: roomId)
-          .snapshots()
-          .listen((snap) {
-        if (snap.docs.isNotEmpty) {
-          if (!_messages.containsKey(roomId)) _messages[roomId] = [];
-          for (final doc in snap.docs) {
-            final msg = ChatMessage.fromJson({
-              ...doc.data(),
-              'id': doc.id,
-            });
-            final existingIdx = _messages[roomId]!.indexWhere((m) =>
-                m.id == msg.id ||
-                (m.senderId == msg.senderId &&
-                    m.content.trim() == msg.content.trim() &&
-                    m.timestamp.difference(msg.timestamp).abs().inSeconds < 5));
-            if (existingIdx != -1) {
-              _messages[roomId]![existingIdx] = msg;
-            } else {
-              _messages[roomId]!.add(msg);
-            }
-            LocalStoreService().addMessage(msg);
-          }
-          // Sort messages chronologically
-          _messages[roomId]!.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-          notifyListeners();
-        }
-      }, onError: (err) {
-        debugPrint('[ChatProvider] Firestore messages stream notice: $err');
-      });
-      _roomFirestoreSubs[roomId] = sub;
-    } catch (_) {}
+    // Bypassed: Real-time messaging uses local Socket.IO and MongoDB.
+    // Disabling legacy Firestore room stream prevents old messages from polluting live chat.
+    return;
   }
 
   void leaveRoom(String roomId, String userName) {
@@ -855,16 +839,12 @@ class ChatProvider extends ChangeNotifier {
       }
     });
 
-    // If in standalone offline mobile mode, trigger interactive realistic peer reply
-    if (!SocketService.disabledForTests && !SocketService().isConnected) {
-      _triggerSimulatedPeerReply(roomId, content);
-    }
   }
 
   void _triggerSimulatedPeerReply(String roomId, String prompt) {
     final isRahulDM = roomId.contains('rahul');
-    final responderName = isRahulDM ? 'Rahul Patel (@rahul_ce)' : 'DDU Peer';
-    final responderId = isRahulDM ? 'user-rahul' : 'u-senior';
+    final responderName = isRahulDM ? 'Rahul Patel (@rahul_ce)' : 'EchoGram Peer';
+    final responderId = isRahulDM ? 'user-rahul' : 'u-peer';
 
     // 1. Show Typing Indicator after 500ms
     Timer(const Duration(milliseconds: 500), () {
@@ -876,19 +856,17 @@ class ChatProvider extends ChangeNotifier {
     Timer(const Duration(milliseconds: 1800), () {
       _typingUser[roomId] = null;
 
-      String replyContent = 'Got it! Check the DDU notice board or student portal for updates.';
+      String replyContent = 'Got it! Thanks for reaching out.';
       final lower = prompt.toLowerCase();
 
       if (lower.contains('basketball') || lower.contains('court') || lower.contains('gym') || lower.contains('sport')) {
-        replyContent = 'Yes! Ground is open till 7:00 PM today. Let me know if you want to team up! 🏀';
-      } else if (lower.contains('canteen') || lower.contains('food') || lower.contains('lunch') || lower.contains('eat')) {
-        replyContent = 'The canteen behind library has fresh meals ready by 12:30 PM! 🍲';
-      } else if (lower.contains('exam') || lower.contains('timetable') || lower.contains('syllabus') || lower.contains('result')) {
-        replyContent = 'Mid-sem schedule was uploaded on DDU student portal. Verify with your class CR once.';
-      } else if (lower.contains('hostel') || lower.contains('room') || lower.contains('gate') || lower.contains('entry')) {
-        replyContent = 'Main gate in-time is 9:30 PM. Out-pass is available from the warden desk.';
+        replyContent = 'Yes! Let me know if you want to team up! 🏀';
+      } else if (lower.contains('coffee') || lower.contains('food') || lower.contains('lunch') || lower.contains('eat')) {
+        replyContent = 'Sounds great, let me know the place and time! 🍲';
+      } else if (lower.contains('project') || lower.contains('code') || lower.contains('work')) {
+        replyContent = 'Sounds interesting! Let me know if you want to collaborate on it.';
       } else if (lower.contains('hi') || lower.contains('hello') || lower.contains('hey')) {
-        replyContent = 'Hey Hardik! How is your semester going at DDU? Let me know if you need any notes! 👋';
+        replyContent = 'Hey! Doing great, how is everything going with you? 👋';
       }
 
       final peerMsg = ChatMessage(
@@ -931,6 +909,7 @@ class ChatProvider extends ChangeNotifier {
     _likeSub?.cancel();
     _dislikeSub?.cancel();
     _seenSub?.cancel();
+    _frAcceptedSub?.cancel();
     _userFirestoreMessagesSub?.cancel();
     super.dispose();
   }

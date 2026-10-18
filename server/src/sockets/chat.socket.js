@@ -70,13 +70,18 @@ const registerChatSocket = (io) => {
       if (isConnected()) {
         try {
           Message.create({
+            id: newMessage.id,
             roomId,
             senderId: newMessage.senderId,
             senderName: newMessage.senderName,
             content,
             isAnonymous: Boolean(isAnonymous),
+            likes: [],
+            dislikes: [],
             createdAt: new Date(sentTime),
-          }).catch(() => {});
+          }).catch((err) => {
+            console.error('[Socket.IO Message.create error]', err.message);
+          });
         } catch (_) {}
       }
 
@@ -136,12 +141,146 @@ const registerChatSocket = (io) => {
       chatNamespace.to(roomId).emit('message_deleted', { roomId, messageId, forEveryone });
     });
 
-    socket.on('like_message', ({ roomId, messageId, userId }) => {
-      chatNamespace.to(roomId).emit('message_liked', { roomId, messageId, userId });
+    // Handles real-time message like toggling with database and memory persistence
+    socket.on('like_message', async ({ roomId, messageId, userId }) => {
+      const uid = String(userId || '').trim();
+      // Guard against invalid or unauthenticated like triggers
+      if (!uid || !roomId || !messageId) return;
+
+      let updatedLikes = [];
+      let updatedDislikes = [];
+
+      // 1. Update in in-memory store
+      if (!store.messages[roomId]) store.messages[roomId] = [];
+      const msg = store.messages[roomId].find((m) => m.id === messageId);
+      if (msg) {
+        if (!Array.isArray(msg.likes)) msg.likes = [];
+        if (!Array.isArray(msg.dislikes)) msg.dislikes = [];
+        msg.dislikes = msg.dislikes.filter((u) => u !== uid);
+        if (msg.likes.includes(uid)) {
+          msg.likes = msg.likes.filter((u) => u !== uid);
+        } else {
+          msg.likes.push(uid);
+        }
+        updatedLikes = [...msg.likes];
+        updatedDislikes = [...msg.dislikes];
+      }
+
+      // 2. Update in MongoDB
+      if (isConnected()) {
+        try {
+          const mongoose = require('mongoose');
+          const isIdObj = mongoose.Types.ObjectId.isValid(messageId);
+          const filter = {
+            $or: [
+              { id: messageId },
+              ...(isIdObj ? [{ _id: messageId }] : []),
+            ],
+          };
+          const dbMsg = await Message.findOne(filter);
+          if (dbMsg) {
+            let dLikes = Array.isArray(dbMsg.likes) ? dbMsg.likes : [];
+            let dDislikes = Array.isArray(dbMsg.dislikes) ? dbMsg.dislikes : [];
+            dDislikes = dDislikes.filter((u) => u !== uid);
+            if (dLikes.includes(uid)) {
+              dLikes = dLikes.filter((u) => u !== uid);
+            } else {
+              dLikes.push(uid);
+            }
+            dbMsg.likes = dLikes;
+            dbMsg.dislikes = dDislikes;
+            await dbMsg.save();
+            updatedLikes = dLikes;
+            updatedDislikes = dDislikes;
+          }
+        } catch (dbErr) {
+          console.error('[Socket.IO like_message DB error]', dbErr.message);
+        }
+      }
+
+      const payload = {
+        roomId,
+        messageId,
+        userId: uid,
+        likes: updatedLikes,
+        dislikes: updatedDislikes,
+      };
+
+      chatNamespace.to(roomId).emit('message_liked', payload);
+      socket.broadcast.emit('message_liked', payload);
+      socket.emit('message_liked', payload);
+      console.log(`[Socket.IO] message_liked: msg ${messageId} in room ${roomId} (likes: ${updatedLikes.length}, dislikes: ${updatedDislikes.length})`);
     });
 
-    socket.on('dislike_message', ({ roomId, messageId, userId }) => {
-      chatNamespace.to(roomId).emit('message_disliked', { roomId, messageId, userId });
+    // Handles real-time message dislike toggling with database and memory persistence
+    socket.on('dislike_message', async ({ roomId, messageId, userId }) => {
+      const uid = String(userId || '').trim();
+      // Guard against invalid or unauthenticated dislike triggers
+      if (!uid || !roomId || !messageId) return;
+
+      let updatedLikes = [];
+      let updatedDislikes = [];
+
+      // 1. Update in in-memory store
+      if (!store.messages[roomId]) store.messages[roomId] = [];
+      const msg = store.messages[roomId].find((m) => m.id === messageId);
+      if (msg) {
+        if (!Array.isArray(msg.likes)) msg.likes = [];
+        if (!Array.isArray(msg.dislikes)) msg.dislikes = [];
+        msg.likes = msg.likes.filter((u) => u !== uid);
+        if (msg.dislikes.includes(uid)) {
+          msg.dislikes = msg.dislikes.filter((u) => u !== uid);
+        } else {
+          msg.dislikes.push(uid);
+        }
+        updatedLikes = [...msg.likes];
+        updatedDislikes = [...msg.dislikes];
+      }
+
+      // 2. Update in MongoDB
+      if (isConnected()) {
+        try {
+          const mongoose = require('mongoose');
+          const isIdObj = mongoose.Types.ObjectId.isValid(messageId);
+          const filter = {
+            $or: [
+              { id: messageId },
+              ...(isIdObj ? [{ _id: messageId }] : []),
+            ],
+          };
+          const dbMsg = await Message.findOne(filter);
+          if (dbMsg) {
+            let dLikes = Array.isArray(dbMsg.likes) ? dbMsg.likes : [];
+            let dDislikes = Array.isArray(dbMsg.dislikes) ? dbMsg.dislikes : [];
+            dLikes = dLikes.filter((u) => u !== uid);
+            if (dDislikes.includes(uid)) {
+              dDislikes = dDislikes.filter((u) => u !== uid);
+            } else {
+              dDislikes.push(uid);
+            }
+            dbMsg.likes = dLikes;
+            dbMsg.dislikes = dDislikes;
+            await dbMsg.save();
+            updatedLikes = dLikes;
+            updatedDislikes = dDislikes;
+          }
+        } catch (dbErr) {
+          console.error('[Socket.IO dislike_message DB error]', dbErr.message);
+        }
+      }
+
+      const payload = {
+        roomId,
+        messageId,
+        userId: uid,
+        likes: updatedLikes,
+        dislikes: updatedDislikes,
+      };
+
+      chatNamespace.to(roomId).emit('message_disliked', payload);
+      socket.broadcast.emit('message_disliked', payload);
+      socket.emit('message_disliked', payload);
+      console.log(`[Socket.IO] message_disliked: msg ${messageId} in room ${roomId} (likes: ${updatedLikes.length}, dislikes: ${updatedDislikes.length})`);
     });
 
     socket.on('mark_seen', ({ roomId, messageId }) => {
@@ -188,7 +327,8 @@ const registerChatSocket = (io) => {
         chatNamespace.to(`user-${rUser}`).emit(eventName, data);
         chatNamespace.to(`user-@${rUser}`).emit(eventName, data);
       }
-      console.log(`[Socket.IO] Broadcasted ${eventName} to user-${sUser} & user-${rUser}`);
+      chatNamespace.emit(eventName, data);
+      console.log(`[Socket.IO] Broadcasted ${eventName} to all clients, user-${sUser} & user-${rUser}`);
     });
 
     socket.on('disconnect', () => {

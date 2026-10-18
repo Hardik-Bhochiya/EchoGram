@@ -45,13 +45,15 @@ class UserService {
             .limit(20)
             .get();
 
+        final fsUsers = <User>[];
         for (final doc in usernameSnap.docs) {
           final u = User.fromFirestore(doc.data(), doc.id);
           if (!isSelf(u)) {
             combined[u.username.toLowerCase()] = u;
-            LocalStoreService().saveUser(u);
+            fsUsers.add(u);
           }
         }
+        if (fsUsers.isNotEmpty) LocalStoreService().saveUsers(fsUsers);
       } catch (_) {}
     }
 
@@ -59,12 +61,14 @@ class UserService {
     try {
       if (ApiService().isServerReachable) {
         final apiResults = await ApiService().searchPeers(clean);
+        final apiUsers = <User>[];
         for (final u in apiResults) {
           if (!isSelf(u)) {
             combined[u.username.toLowerCase()] = u;
-            LocalStoreService().saveUser(u);
+            apiUsers.add(u);
           }
         }
+        if (apiUsers.isNotEmpty) LocalStoreService().saveUsers(apiUsers);
       }
     } catch (_) {}
 
@@ -72,7 +76,7 @@ class UserService {
   }
 
   /// Get all registered users prioritizing Cloud Firestore and MongoDB backend, strictly excluding self
-  Future<List<User>> getSuggestedUsers({String? currentUserId, String? currentUsername, int limit = 200}) async {
+  Future<List<User>> getSuggestedUsers({String? currentUserId, String? currentUsername, int limit = 60}) async {
     final Map<String, User> combined = {};
     final cleanCurrentUname = (currentUsername ?? '').trim().toLowerCase().replaceAll('@', '');
 
@@ -96,12 +100,14 @@ class UserService {
     try {
       if (ApiService().isServerReachable) {
         final apiResults = await ApiService().searchPeers('');
+        final apiBatch = <User>[];
         for (final u in apiResults) {
           if (!isSelf(u)) {
             combined[u.username.toLowerCase()] = u;
-            LocalStoreService().saveUser(u);
+            apiBatch.add(u);
           }
         }
+        if (apiBatch.isNotEmpty) LocalStoreService().saveUsers(apiBatch);
       }
     } catch (_) {}
 
@@ -113,13 +119,15 @@ class UserService {
             .limit(limit)
             .get();
 
+        final fsBatch = <User>[];
         for (final doc in snap.docs) {
           final u = User.fromFirestore(doc.data(), doc.id);
           if (!isSelf(u)) {
             combined[u.username.toLowerCase()] = u;
-            LocalStoreService().saveUser(u);
+            fsBatch.add(u);
           }
         }
+        if (fsBatch.isNotEmpty) LocalStoreService().saveUsers(fsBatch);
       } catch (_) {}
     }
 

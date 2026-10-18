@@ -17,5 +17,9 @@ const communitySchema = new mongoose.Schema({
   members: [{ type: String }],
 }, { timestamps: true });
 
+communitySchema.index({ id: 1 });
+communitySchema.index({ category: 1 });
+communitySchema.index({ regionId: 1 });
+
 module.exports = mongoose.model('Community', communitySchema);
 

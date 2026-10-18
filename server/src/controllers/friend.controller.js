@@ -130,18 +130,43 @@ exports.sendFriendRequest = async (req, res) => {
 exports.respondFriendRequest = async (req, res) => {
   try {
     const { requestId, status, senderUsername, receiverUsername } = req.body;
+    const mongoose = require('mongoose');
+
+    const u1 = (senderUsername || '').trim().toLowerCase().replaceAll('@', '');
+    const u2 = (receiverUsername || '').trim().toLowerCase().replaceAll('@', '');
 
     let reqObj = null;
     if (isConnected()) {
-      reqObj = await FriendRequest.findOne({ id: requestId });
+      const conditions = [];
+      if (requestId) {
+        conditions.push({ id: requestId });
+        if (mongoose.Types.ObjectId.isValid(requestId)) {
+          conditions.push({ _id: requestId });
+        }
+      }
+      if (u1 && u2) {
+        conditions.push({ senderUsername: u1, receiverUsername: u2 });
+        conditions.push({ senderUsername: u2, receiverUsername: u1 });
+      }
+      if (conditions.length > 0) {
+        reqObj = await FriendRequest.findOne({ $or: conditions });
+      }
     }
     if (!reqObj) {
-      reqObj = store.friendRequests.find((r) => r.id === requestId);
+      reqObj = store.friendRequests.find((r) =>
+        r.id === requestId ||
+        (u1 && u2 && ((r.senderUsername.toLowerCase() === u1 && r.receiverUsername.toLowerCase() === u2) ||
+         (r.senderUsername.toLowerCase() === u2 && r.receiverUsername.toLowerCase() === u1)))
+      );
     }
 
     if (!reqObj) {
       return res.status(404).json({ error: 'Friend request not found' });
     }
+
+    const finalU1 = (reqObj.senderUsername || u1).trim().toLowerCase().replaceAll('@', '');
+    const finalU2 = (reqObj.receiverUsername || u2).trim().toLowerCase().replaceAll('@', '');
+    const actualReqId = reqObj.id || (reqObj._id ? reqObj._id.toString() : requestId);
 
     if (status === 'accepted') {
       reqObj.status = 'accepted';
@@ -155,11 +180,11 @@ exports.respondFriendRequest = async (req, res) => {
           await Friendship.updateOne(
             {
               $or: [
-                { user1: u1, user2: u2 },
-                { user1: u2, user2: u1 },
+                { user1: finalU1, user2: finalU2 },
+                { user1: finalU2, user2: finalU1 },
               ],
             },
-            { $setOnInsert: { user1: u1, user2: u2 } },
+            { $setOnInsert: { user1: finalU1, user2: finalU2 } },
             { upsert: true }
           );
         } catch (dbErr) {
@@ -168,37 +193,31 @@ exports.respondFriendRequest = async (req, res) => {
       }
 
       // Add to in-memory store
-      if (!store.friends[u1]) store.friends[u1] = new Set();
-      store.friends[u1].add(u2);
+      if (!store.friends[finalU1]) store.friends[finalU1] = new Set();
+      store.friends[finalU1].add(finalU2);
 
-      if (!store.friends[u2]) store.friends[u2] = new Set();
-      store.friends[u2].add(u1);
+      if (!store.friends[finalU2]) store.friends[finalU2] = new Set();
+      store.friends[finalU2].add(finalU1);
 
-      // Emit accepted socket event to both parties
-      emitSocketEvent(req, 'friend_request_accepted', `user-${u1}`, {
-        requestId,
+      // Remove from store.friendRequests
+      store.friendRequests = store.friendRequests.filter((r) => r.id !== actualReqId && r.id !== requestId);
+
+      const eventPayload = {
+        requestId: actualReqId,
         status: 'accepted',
-        senderUsername: u1,
-        receiverUsername: u2,
-      });
-      emitSocketEvent(req, 'friend_request_accepted', `user-${u2}`, {
-        requestId,
-        status: 'accepted',
-        senderUsername: u1,
-        receiverUsername: u2,
-      });
-      emitSocketEvent(req, 'friend_request_accepted', `user-@${u1}`, {
-        requestId,
-        status: 'accepted',
-        senderUsername: u1,
-        receiverUsername: u2,
-      });
-      emitSocketEvent(req, 'friend_request_accepted', `user-@${u2}`, {
-        requestId,
-        status: 'accepted',
-        senderUsername: u1,
-        receiverUsername: u2,
-      });
+        senderUsername: finalU1,
+        receiverUsername: finalU2,
+      };
+
+      // Emit accepted socket event to both parties & globally
+      emitSocketEvent(req, 'friend_request_accepted', `user-${finalU1}`, eventPayload);
+      emitSocketEvent(req, 'friend_request_accepted', `user-${finalU2}`, eventPayload);
+      emitSocketEvent(req, 'friend_request_accepted', `user-@${finalU1}`, eventPayload);
+      emitSocketEvent(req, 'friend_request_accepted', `user-@${finalU2}`, eventPayload);
+      try {
+        const io = req.app.get('io');
+        if (io) io.of('/chat').emit('friend_request_accepted', eventPayload);
+      } catch (_) {}
     } else {
       // Rejection / Decline: completely remove pending request so sender can request again
       if (isConnected()) {

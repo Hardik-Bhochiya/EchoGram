@@ -291,13 +291,11 @@ class FriendshipService {
 
     return _firestore
         .collection('friendRequests')
+        .where('receiverUsername', isEqualTo: clean)
+        .where('status', isEqualTo: 'pending')
         .snapshots()
         .map((snap) => snap.docs
             .map((doc) => FriendRequest.fromFirestore(doc.data(), doc.id))
-            .where((r) {
-              final rUname = r.receiverUsername.trim().toLowerCase().replaceAll('@', '');
-              return rUname == clean && r.isPending;
-            })
             .toList());
   }
 
@@ -309,13 +307,10 @@ class FriendshipService {
 
     return _firestore
         .collection('friendRequests')
+        .where('senderUsername', isEqualTo: clean)
         .snapshots()
         .map((snap) => snap.docs
             .map((doc) => FriendRequest.fromFirestore(doc.data(), doc.id))
-            .where((r) {
-              final sUname = r.senderUsername.trim().toLowerCase().replaceAll('@', '');
-              return sUname == clean;
-            })
             .toList());
   }
 
@@ -327,16 +322,10 @@ class FriendshipService {
 
     return _firestore
         .collection('friendships')
+        .where('usernames', arrayContains: clean)
         .snapshots()
         .map((snap) => snap.docs
             .map((doc) => Friendship.fromFirestore(doc.data(), doc.id))
-            .where((f) {
-              final u1 = f.user1.toLowerCase().replaceAll('@', '').trim();
-              final u2 = f.user2.toLowerCase().replaceAll('@', '').trim();
-              final unames = f.usernames.map((u) => u.toLowerCase().replaceAll('@', '').trim()).toSet();
-              final docId = f.id.toLowerCase().replaceAll('@', '').trim();
-              return u1 == clean || u2 == clean || unames.contains(clean) || docId.contains(clean);
-            })
             .toList());
   }
 }

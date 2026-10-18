@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -26,7 +27,7 @@ class LocalStoreService {
   static const String _keyLocations = 'nt_local_locations_v2';
   static const String _keyUsers = 'nt_local_users_v2';
   static const String _keyCustomBackendUrl = 'nt_custom_backend_url';
-  static const String _keyWipeVersion = 'nt_db_wiped_v5';
+  static const String _keyWipeVersion = 'nt_db_wiped_v10';
 
   bool _initialized = false;
   List<Question> _questions = [];
@@ -41,6 +42,17 @@ class LocalStoreService {
 
   bool get isInitialized => _initialized;
   String? get customBackendUrl => _customBackendUrl;
+
+  void clearChatData() {
+    _chatRooms = [];
+    _messages = {};
+    _userFriends = {};
+    _friendRequests = [];
+    _persistChatRooms();
+    _persistMessages();
+    _persistUserFriends();
+    _persistFriendRequests();
+  }
 
   Future<void> init() async {
     if (_initialized) return;
@@ -59,7 +71,7 @@ class LocalStoreService {
         _friendRequests = [];
         _userFriends = {};
         _users = [];
-        _locations = ['DDU Nadiad', 'Nadiad', 'Ahmedabad', 'Vadodara', 'Gandhinagar'];
+        _locations = ['General', 'Tech', 'Design', 'Gaming', 'Music'];
         _initialized = true;
         debugPrint('[LocalStore] All accounts and local caches cleanly wiped.');
         return;
@@ -95,6 +107,9 @@ class LocalStoreService {
               !cName.contains('robotics') &&
               !cName.contains('hostel') &&
               !cName.contains('official') &&
+              !cName.contains('hustlers') &&
+              cName != 'abc' &&
+              cName != 'apc' &&
               c.creatorId != 'rahul123') {
             unique[c.id] = c;
           }
@@ -111,10 +126,10 @@ class LocalStoreService {
         final list = jsonDecode(locStr) as List<dynamic>;
         _locations = list.map((e) => e.toString()).where((l) => l != 'Mumbai' && l != 'Dwarka').toList();
         if (_locations.isEmpty) {
-          _locations = ['DDU Nadiad', 'Nadiad', 'Ahmedabad', 'Vadodara', 'Gandhinagar'];
+          _locations = ['General', 'Tech', 'Design', 'Gaming', 'Music'];
         }
       } else {
-        _locations = ['DDU Nadiad', 'Nadiad', 'Ahmedabad', 'Vadodara', 'Gandhinagar'];
+        _locations = ['General', 'Tech', 'Design', 'Gaming', 'Music'];
         _persistLocations();
       }
 
@@ -147,6 +162,9 @@ class LocalStoreService {
                   t.contains('hostel group') ||
                   t.contains('official chat') ||
                   t.contains('robotics') ||
+                  t.contains('hustlers') ||
+                  t == 'abc' ||
+                  t == 'apc' ||
                   s.contains('rahul') ||
                   id.startsWith('room-c') ||
                   id.contains('rahul')) {
@@ -212,9 +230,9 @@ class LocalStoreService {
       debugPrint('[LocalStore] Initialized successfully with offline persistence.');
     } catch (e) {
       debugPrint('[LocalStore] Initialization fallback: $e');
-      _questions = List.from(MockDataService.initialQuestions);
+      _questions = [];
       _communities = [];
-      _locations = ['DDU Nadiad', 'Nadiad', 'Ahmedabad', 'Vadodara', 'Gandhinagar'];
+      _locations = ['General', 'Tech', 'Design', 'Gaming', 'Music'];
       _chatRooms = [];
       _friendRequests = [];
       _userFriends = {};
@@ -369,7 +387,9 @@ class LocalStoreService {
 
   // --- Chat ---
 
-  List<ChatRoom> getChatRooms() => List<ChatRoom>.from(_chatRooms);
+  List<ChatRoom> getChatRooms() => List<ChatRoom>.from(
+      _chatRooms.where((r) => !r.id.startsWith('room-dm-') && !r.title.trim().toLowerCase().endsWith(' chat') && r.title.trim().toLowerCase() != 'chat'),
+    );
 
   List<ChatMessage> getMessages(String roomId) {
     final list = _messages[roomId] ?? [];
@@ -425,7 +445,7 @@ class LocalStoreService {
     } else {
       roomList.add(message);
     }
-    _persistMessages();
+    _schedulePersistMessages();
 
     // Update Room's last message
     final index = _chatRooms.indexWhere((r) => r.id == message.roomId);
@@ -434,8 +454,50 @@ class LocalStoreService {
         lastMessage: message.content,
         lastMessageTime: message.timestamp,
       );
-      _persistChatRooms();
+      _schedulePersistChatRooms();
     }
+  }
+
+  void addMessages(List<ChatMessage> messages) {
+    if (messages.isEmpty) return;
+    for (final message in messages) {
+      if (!_messages.containsKey(message.roomId)) {
+        _messages[message.roomId] = [];
+      }
+      final roomList = _messages[message.roomId]!;
+      final sContent = message.content.trim();
+
+      final existingIdx = roomList.indexWhere((m) =>
+          m.id == message.id ||
+          (m.senderId == message.senderId &&
+              m.content.trim() == sContent &&
+              m.timestamp.difference(message.timestamp).abs().inSeconds < 5));
+
+      if (existingIdx != -1) {
+        final cur = roomList[existingIdx];
+        roomList[existingIdx] = cur.copyWith(
+          id: message.id.isNotEmpty ? message.id : cur.id,
+          content: message.content,
+          status: (message.status == 'seen' || cur.status == 'seen') ? 'seen' : message.status,
+          likes: message.likes.isNotEmpty ? message.likes : cur.likes,
+          dislikes: message.dislikes.isNotEmpty ? message.dislikes : cur.dislikes,
+          isEdited: message.isEdited || cur.isEdited,
+          isDeleted: message.isDeleted || cur.isDeleted,
+        );
+      } else {
+        roomList.add(message);
+      }
+
+      final index = _chatRooms.indexWhere((r) => r.id == message.roomId);
+      if (index != -1) {
+        _chatRooms[index] = _chatRooms[index].copyWith(
+          lastMessage: message.content,
+          lastMessageTime: message.timestamp,
+        );
+      }
+    }
+    _schedulePersistMessages();
+    _schedulePersistChatRooms();
   }
 
   void editMessage(String roomId, String messageId, String newContent) {
@@ -518,6 +580,17 @@ class LocalStoreService {
     }
   }
 
+  void updateMessageLikes(String roomId, String messageId, List<String> likes, List<String> dislikes) {
+    final roomMsgs = _messages[roomId];
+    if (roomMsgs != null) {
+      final idx = roomMsgs.indexWhere((m) => m.id == messageId);
+      if (idx != -1) {
+        roomMsgs[idx] = roomMsgs[idx].copyWith(likes: likes, dislikes: dislikes);
+        _persistMessages();
+      }
+    }
+  }
+
   void addOrUpdateRoom(ChatRoom room) {
     final index = _chatRooms.indexWhere((r) => r.id == room.id);
     if (index != -1) {
@@ -525,14 +598,14 @@ class LocalStoreService {
     } else {
       _chatRooms.insert(0, room);
     }
-    _persistChatRooms();
+    _schedulePersistChatRooms();
   }
 
   void markRoomAsRead(String roomId) {
     final index = _chatRooms.indexWhere((r) => r.id == roomId);
     if (index != -1 && _chatRooms[index].unreadCount > 0) {
       _chatRooms[index] = _chatRooms[index].copyWith(unreadCount: 0);
-      _persistChatRooms();
+      _schedulePersistChatRooms();
     }
   }
 
@@ -573,6 +646,23 @@ class LocalStoreService {
     } catch (e) {
       debugPrint('[LocalStore] Persist communities error: $e');
     }
+  }
+
+  Timer? _persistChatRoomsTimer;
+  Timer? _persistMessagesTimer;
+
+  void _schedulePersistChatRooms() {
+    _persistChatRoomsTimer?.cancel();
+    _persistChatRoomsTimer = Timer(const Duration(milliseconds: 250), () {
+      _persistChatRooms();
+    });
+  }
+
+  void _schedulePersistMessages() {
+    _persistMessagesTimer?.cancel();
+    _persistMessagesTimer = Timer(const Duration(milliseconds: 250), () {
+      _persistMessages();
+    });
   }
 
   Future<void> _persistChatRooms() async {
@@ -790,6 +880,15 @@ class LocalStoreService {
     return _users.any((u) => u.username.toLowerCase() == clean);
   }
 
+  Timer? _persistUsersTimer;
+
+  void _schedulePersistUsers() {
+    _persistUsersTimer?.cancel();
+    _persistUsersTimer = Timer(const Duration(milliseconds: 300), () {
+      _persistUsers();
+    });
+  }
+
   void saveUser(User user) {
     final idx = _users.indexWhere((u) =>
         u.id == user.id ||
@@ -799,7 +898,22 @@ class LocalStoreService {
     } else {
       _users.insert(0, user);
     }
-    _persistUsers();
+    _schedulePersistUsers();
+  }
+
+  void saveUsers(List<User> users) {
+    if (users.isEmpty) return;
+    for (final user in users) {
+      final idx = _users.indexWhere((u) =>
+          u.id == user.id ||
+          u.username.toLowerCase() == user.username.toLowerCase());
+      if (idx != -1) {
+        _users[idx] = user;
+      } else {
+        _users.insert(0, user);
+      }
+    }
+    _schedulePersistUsers();
   }
 
   List<User> searchUsers(String query, {String? excludeUserId}) {

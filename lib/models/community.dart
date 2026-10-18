@@ -4,7 +4,7 @@ class Community {
   final String description;
   final String regionId;
   final String regionName;
-  final String locationSpot; // e.g. 'DDU Library', 'Campus Canteen', 'Sports Ground'
+  final String locationSpot; // e.g. 'Tech Hub', 'Main Lounge', 'Global'
   final String creatorId; // WhatsApp-style creator ID who can delete the group
   final String category; // 'Campus', 'Academics', 'Housing', 'Food & Dining', 'Tech & Clubs', 'Sports'
   final int memberCount;
@@ -121,10 +121,10 @@ class Community {
       name: json['name'] as String,
       description: json['description'] as String? ?? '',
       regionId: json['regionId'] as String? ?? 'default',
-      regionName: json['regionName'] as String? ?? 'General Campus',
-      locationSpot: json['locationSpot'] as String? ?? 'DDU Campus',
+      regionName: json['regionName'] as String? ?? 'General',
+      locationSpot: json['locationSpot'] as String? ?? 'Global',
       creatorId: json['creatorId'] as String? ?? '',
-      category: json['category'] as String? ?? 'Campus',
+      category: json['category'] as String? ?? 'General',
       memberCount: effMemberCount,
       questionCount: json['questionCount'] as int? ?? 0,
       iconEmoji: json['iconEmoji'] as String? ?? '🏛️',

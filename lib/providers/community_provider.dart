@@ -42,49 +42,10 @@ class CommunityProvider extends ChangeNotifier {
   }
 
   void _initFirestoreListener() {
-    if (Firebase.apps.isEmpty) return;
-    try {
-      _firestoreSub = FirebaseFirestore.instance
-          .collection('communities')
-          .snapshots()
-          .listen((snap) {
-        if (snap.docs.isNotEmpty) {
-          final Map<String, Community> map = {};
-          final cleanUser = (_activeUserIdentifier ?? '').toLowerCase().replaceAll('@', '');
-
-          for (final doc in snap.docs) {
-            final data = doc.data();
-            final c = Community.fromJson({
-              ...data,
-              'id': doc.id,
-            });
-            final cName = c.name.toLowerCase();
-            if (c.id.startsWith('c') ||
-                cName.contains('canteen') ||
-                cName.contains('hostel') ||
-                cName.contains('robotics') ||
-                c.creatorId == 'rahul123') {
-              continue;
-            }
-            final existingIdx = _communities.indexWhere((item) => item.id == c.id);
-            final wasJoined = existingIdx != -1 ? _communities[existingIdx].isJoined : false;
-            final isMember = cleanUser.isNotEmpty && c.members.any((m) => m.toLowerCase().replaceAll('@', '') == cleanUser);
-            final isJoined = c.isJoined || wasJoined || isMember;
-
-            final updated = c.copyWith(isJoined: isJoined);
-            map[c.id] = updated;
-            LocalStoreService().addCommunity(updated);
-            LocalStoreService().addLocation(c.regionName);
-          }
-
-          _communities = map.values.toList();
-          _syncRegions();
-          notifyListeners();
-        }
-      }, onError: (err) {
-        debugPrint('[CommunityProvider] Firestore communities notice: $err');
-      });
-    } catch (_) {}
+    _firestoreSub?.cancel();
+    // Bypassed: Communities sync directly with local MongoDB via ApiService.
+    // Disabling Firestore stream prevents ghost communities (ABC, APC, Nadiad Hustlers) from reappearing.
+    return;
   }
 
   void addLocation(String location) {
@@ -101,8 +62,8 @@ class CommunityProvider extends ChangeNotifier {
       return Region(
         id: cleanId,
         name: name,
-        category: name.contains('Campus') || name.contains('College') || name.contains('DDU') ? 'Campus' : 'City',
-        description: 'Local campus and city community members in $name',
+        category: 'General',
+        description: 'Community members in $name',
         activeCommunitiesCount: commCount,
         activeMembersCount: 0,
         iconEmoji: '📍',

@@ -97,63 +97,75 @@ class SocketService {
       });
 
       _socket?.on('receive_message', (data) {
-        if (data != null && data is Map<String, dynamic>) {
-          final msg = ChatMessage.fromJson(data);
+        if (data != null && data is Map) {
+          final map = Map<String, dynamic>.from(data);
+          final msg = ChatMessage.fromJson(map);
           _messageController.add(msg);
+          debugPrint('[SocketService] Received message: ${msg.id} in ${msg.roomId}');
         }
       });
 
       _socket?.on('user_typing', (data) {
-        if (data != null && data is Map<String, dynamic>) {
-          _typingController.add(data);
+        if (data != null && data is Map) {
+          _typingController.add(Map<String, dynamic>.from(data));
         }
       });
 
       _socket?.on('message_edited', (data) {
-        if (data != null && data is Map<String, dynamic>) {
-          _editController.add(data);
+        if (data != null && data is Map) {
+          _editController.add(Map<String, dynamic>.from(data));
         }
       });
 
       _socket?.on('message_deleted', (data) {
-        if (data != null && data is Map<String, dynamic>) {
-          _deleteController.add(data);
+        if (data != null && data is Map) {
+          _deleteController.add(Map<String, dynamic>.from(data));
         }
       });
 
       _socket?.on('message_liked', (data) {
-        if (data != null && data is Map<String, dynamic>) {
-          _likeController.add(data);
+        if (data != null && data is Map) {
+          final map = Map<String, dynamic>.from(data);
+          _likeController.add(map);
+          debugPrint('[SocketService] Received message_liked: ${map['messageId']}');
         }
       });
 
       _socket?.on('message_disliked', (data) {
-        if (data != null && data is Map<String, dynamic>) {
-          _dislikeController.add(data);
+        if (data != null && data is Map) {
+          final map = Map<String, dynamic>.from(data);
+          _dislikeController.add(map);
+          debugPrint('[SocketService] Received message_disliked: ${map['messageId']}');
         }
       });
 
       _socket?.on('message_seen', (data) {
-        if (data != null && data is Map<String, dynamic>) {
-          _seenController.add(data);
+        if (data != null && data is Map) {
+          _seenController.add(Map<String, dynamic>.from(data));
         }
       });
 
       _socket?.on('friend_request_received', (data) {
-        if (data != null && data is Map<String, dynamic>) {
-          _friendRequestReceivedController.add(Map<String, dynamic>.from(data));
+        if (data != null && data is Map) {
+          final map = Map<String, dynamic>.from(data);
+          _friendRequestReceivedController.add(map);
+          debugPrint('[SocketService] Received friend_request_received: ${map['senderUsername']} -> ${map['receiverUsername']}');
         }
       });
 
       _socket?.on('friend_request_accepted', (data) {
-        if (data != null && data is Map<String, dynamic>) {
-          _friendRequestAcceptedController.add(Map<String, dynamic>.from(data));
+        if (data != null && data is Map) {
+          final map = Map<String, dynamic>.from(data);
+          _friendRequestAcceptedController.add(map);
+          debugPrint('[SocketService] Received friend_request_accepted: ${map['senderUsername']} & ${map['receiverUsername']}');
         }
       });
 
       _socket?.on('friend_request_declined', (data) {
-        if (data != null && data is Map<String, dynamic>) {
-          _friendRequestDeclinedController.add(Map<String, dynamic>.from(data));
+        if (data != null && data is Map) {
+          final map = Map<String, dynamic>.from(data);
+          _friendRequestDeclinedController.add(map);
+          debugPrint('[SocketService] Received friend_request_declined: ${map['senderUsername']} & ${map['receiverUsername']}');
         }
       });
     } catch (e) {

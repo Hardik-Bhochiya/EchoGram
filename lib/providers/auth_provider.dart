@@ -46,6 +46,7 @@ class AuthProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   AuthStatus get status => _status;
+  String get activeUsername => _currentUser?.username ?? '';
 
   AuthProvider() {
     _knownUsers = [];
@@ -173,19 +174,12 @@ class AuthProvider extends ChangeNotifier {
         } catch (e) {
           final msg = e.toString().replaceFirst('Exception: ', '');
           debugPrint('Firebase login notice: $msg');
-          if (msg.contains('wrong-password') ||
-              msg.contains('user-not-found') ||
-              msg.contains('invalid-credential') ||
-              msg.contains('too-many-requests') ||
-              msg.contains('configuration-not-found') ||
-              msg.contains('Firebase Authentication is not activated')) {
-            throw Exception(msg);
-          }
+          // Don't rethrow on configuration-not-found or unactivated Firebase Auth; smoothly fallback to Backend API
           lastAuthError = msg;
         }
       }
 
-      // 2. Fallback: Try Backend API
+      // 2. Fallback: Try Backend API (Node.js + Express + MongoDB)
       if (user == null) {
         try {
           user = await ApiService().login(usernameOrEmail, password);
@@ -195,10 +189,11 @@ class AuthProvider extends ChangeNotifier {
         }
       }
 
-      // 3. Session recovery for known registered local users
-      if (user == null && lastAuthError == null) {
+      // 3. Fallback: Session recovery for known registered local users
+      if (user == null) {
         final clean = usernameOrEmail.trim().toLowerCase().replaceAll('@', '');
-        final matches = _knownUsers.where(
+        final localUsers = LocalStoreService().getRegisteredUsers();
+        final matches = localUsers.where(
           (u) => u.username.toLowerCase() == clean || u.email.toLowerCase() == clean,
         );
 
@@ -325,7 +320,7 @@ class AuthProvider extends ChangeNotifier {
         final parts = name.trim().split(' ');
         final resolvedFirst = firstName ?? (parts.isNotEmpty ? parts.first : 'User');
         final resolvedLast = lastName ?? (parts.length > 1 ? parts.sublist(1).join(' ') : '');
-        final city = campusOrCity ?? campus ?? 'DDU, Nadiad';
+        final city = campusOrCity ?? campus ?? 'Global';
 
         user = User(
           id: 'user_${DateTime.now().millisecondsSinceEpoch}',
@@ -339,7 +334,7 @@ class AuthProvider extends ChangeNotifier {
           reputation: 50,
           joinedCommunityIds: const [],
           badges: const ['Newcomer'],
-          isCollegeVerified: email.contains('ddu.ac.in') || email.contains('edu'),
+          isCollegeVerified: true,
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),
         );
@@ -406,7 +401,7 @@ class AuthProvider extends ChangeNotifier {
       throw Exception('Name cannot be empty.');
     }
 
-    final trimmedLoc = campusOrCity.trim().isEmpty ? 'DDU, Nadiad' : campusOrCity.trim();
+    final trimmedLoc = campusOrCity.trim().isEmpty ? 'Global' : campusOrCity.trim();
     final trimmedBio = majorOrBio.trim();
     final parts = trimmedName.split(' ');
     final fName = parts.isNotEmpty ? parts.first : 'User';
@@ -543,128 +538,9 @@ class AuthProvider extends ChangeNotifier {
     _firestoreIncomingFrSub?.cancel();
     _firestoreOutgoingFrSub?.cancel();
     _firestoreFriendshipsSub?.cancel();
-
-    final cleanMyUsername = user.username.trim().toLowerCase().replaceAll('@', '');
-    if (cleanMyUsername.isEmpty) return;
-
-    // 1. Live Incoming Friend Requests (realtime delivery for notifications)
-    _firestoreIncomingFrSub = FriendshipService()
-        .streamPendingIncomingRequests(cleanMyUsername)
-        .listen((reqList) {
-      _incomingRequests = reqList;
-      for (final req in reqList) {
-        LocalStoreService().addFriendRequest(req);
-      }
-      notifyListeners();
-    }, onError: (err) {
-      debugPrint('[AuthProvider] Firestore incoming stream notice: $err');
-    });
-
-    // 2. Live Outgoing Friend Requests (updates if rejected or accepted)
-    _firestoreOutgoingFrSub = FriendshipService()
-        .streamOutgoingRequests(cleanMyUsername)
-        .listen((reqList) {
-      _outgoingRequests = reqList;
-      for (final req in reqList) {
-        LocalStoreService().addFriendRequest(req);
-        if (req.isDeclined) {
-          LocalStoreService().respondFriendRequest(
-            req.id,
-            'declined',
-            senderUsername: req.senderUsername,
-            receiverUsername: req.receiverUsername,
-          );
-        }
-      }
-      notifyListeners();
-    }, onError: (err) {
-      debugPrint('[AuthProvider] Firestore outgoing stream notice: $err');
-    });
-
-    // 3. Live Friendships (synchronized across all ports, devices, and sessions)
-    _firestoreFriendshipsSub = FriendshipService()
-        .streamFriendships(cleanMyUsername)
-        .listen((friendshipList) {
-      final Set<String> updatedUsernames = {};
-      final List<User> updatedFriends = [];
-
-      for (final f in friendshipList) {
-        final u1Clean = f.user1.toLowerCase().replaceAll('@', '').trim();
-        final u2Clean = f.user2.toLowerCase().replaceAll('@', '').trim();
-        String otherUname = (u1Clean == cleanMyUsername)
-            ? u2Clean
-            : (u2Clean == cleanMyUsername ? u1Clean : '');
-
-        if (otherUname.isEmpty) {
-          for (final u in f.usernames) {
-            final cu = u.toLowerCase().replaceAll('@', '').trim();
-            if (cu.isNotEmpty && cu != cleanMyUsername) {
-              otherUname = cu;
-              break;
-            }
-          }
-        }
-
-        if (otherUname.isEmpty && f.id.isNotEmpty) {
-          final fid = f.id.toLowerCase().replaceAll('@', '').trim();
-          if (fid.startsWith('${cleanMyUsername}_')) {
-            otherUname = fid.substring(cleanMyUsername.length + 1);
-          } else if (fid.endsWith('_$cleanMyUsername')) {
-            otherUname = fid.substring(0, fid.length - cleanMyUsername.length - 1);
-          } else if (f.id.contains('_')) {
-            final parts = f.id.toLowerCase().replaceAll('@', '').split('_');
-            for (final p in parts) {
-              final cp = p.trim();
-              if (cp.isNotEmpty && cp != cleanMyUsername) {
-                otherUname = cp;
-                break;
-              }
-            }
-          }
-        }
-
-        if (otherUname.isNotEmpty && otherUname != cleanMyUsername) {
-          updatedUsernames.add(otherUname.toLowerCase());
-          LocalStoreService().addFriend(cleanMyUsername, otherUname);
-
-          User? friendUser = findUserByUsername(otherUname);
-          if (friendUser == null) {
-            final otherDisplayName = (u1Clean == cleanMyUsername)
-                ? (f.user2Name ?? otherUname)
-                : (f.user1Name ?? otherUname);
-            final otherAvatar = (u1Clean == cleanMyUsername)
-                ? f.user2Avatar
-                : f.user1Avatar;
-            friendUser = User(
-              id: 'user_$otherUname',
-              username: otherUname,
-              name: otherDisplayName,
-              avatarUrl: otherAvatar,
-              email: '$otherUname@neartalk.local',
-              campusOrCity: 'EchoGram Campus',
-              createdAt: f.createdAt,
-            );
-          }
-          updatedFriends.add(friendUser);
-          if (!_knownUsers.any((k) => k.username.toLowerCase() == otherUname.toLowerCase())) {
-            _knownUsers.add(friendUser);
-          }
-          LocalStoreService().cancelFriendRequest(cleanMyUsername, otherUname);
-          _outgoingRequests.removeWhere((r) =>
-              r.receiverUsername.toLowerCase().replaceAll('@', '') == otherUname ||
-              r.senderUsername.toLowerCase().replaceAll('@', '') == otherUname);
-          _incomingRequests.removeWhere((r) =>
-              r.receiverUsername.toLowerCase().replaceAll('@', '') == otherUname ||
-              r.senderUsername.toLowerCase().replaceAll('@', '') == otherUname);
-        }
-      }
-
-      _friendUsernamesSet = updatedUsernames;
-      _friendsList = updatedFriends;
-      notifyListeners();
-    }, onError: (err) {
-      debugPrint('[AuthProvider] Firestore friendships stream notice: $err');
-    });
+    // Bypassed: Friend data syncs directly with local MongoDB via ApiService and SocketService.
+    // Disabling Firestore streams prevents legacy 12-day-old friendships (such as linking dhruv_032 & hardik_032) from reappearing.
+    return;
   }
 
   // --- Friends & Friend Requests Methods for UI Compatibility ---
@@ -873,9 +749,11 @@ class AuthProvider extends ChangeNotifier {
         }
 
         _outgoingRequests.removeWhere((r) =>
+            (reqId != null && r.id == reqId) ||
             r.receiverUsername.toLowerCase().replaceAll('@', '') == otherUname ||
             r.senderUsername.toLowerCase().replaceAll('@', '') == otherUname);
         _incomingRequests.removeWhere((r) =>
+            (reqId != null && r.id == reqId) ||
             r.receiverUsername.toLowerCase().replaceAll('@', '') == otherUname ||
             r.senderUsername.toLowerCase().replaceAll('@', '') == otherUname);
 

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'firebase_options.dart';
 import 'theme/app_theme.dart';
 import 'providers/theme_provider.dart';
@@ -15,6 +17,33 @@ import 'widgets/mobile_device_frame.dart';
 import 'screens/main_nav_screen.dart';
 import 'screens/auth/login_screen.dart';
 
+Future<void> _wipeAllFirestoreData() async {
+  try {
+    if (Firebase.apps.isNotEmpty) {
+      final db = FirebaseFirestore.instance;
+      final collections = [
+        'messages',
+        'communities',
+        'friendships',
+        'friendRequests',
+        'chatRooms',
+        'questions',
+        'users',
+        'usernames',
+        'notifications',
+      ];
+      for (final col in collections) {
+        try {
+          final snap = await db.collection(col).get().timeout(const Duration(milliseconds: 1500));
+          for (final doc in snap.docs) {
+            await doc.reference.delete();
+          }
+        } catch (_) {}
+      }
+    }
+  } catch (_) {}
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
@@ -26,6 +55,9 @@ void main() async {
   } catch (e) {
     debugPrint('Firebase initialization notice: $e');
   }
+
+  // Non-blocking purge attempt of legacy cloud data
+  _wipeAllFirestoreData();
   await LocalStoreService().init();
   await ApiService().init();
 

@@ -231,15 +231,21 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    final currentUserId = auth.currentUser?.id ?? '';
+    // Robust current user identifier: prioritize MongoDB/User ID, fallback to username
+    final currentUserId = (auth.currentUser?.id != null && auth.currentUser!.id.isNotEmpty)
+        ? auth.currentUser!.id
+        : auth.activeUsername;
     final chatProvider = context.watch<ChatProvider>();
     final communityProvider = context.watch<CommunityProvider>();
 
     final room = chatProvider.rooms.firstWhere(
       (r) => r.id == widget.roomId,
-      orElse: () => chatProvider.rooms.isNotEmpty
-          ? chatProvider.rooms.first
-          : chatProvider.getOrCreateCommunityRoom(widget.roomId, 'Chat', '💬'),
+      orElse: () {
+        if (widget.roomId.startsWith('dm-')) {
+          return chatProvider.getOrCreateDirectRoom(widget.roomId, auth.activeUsername);
+        }
+        return chatProvider.getOrCreateCommunityRoom(widget.roomId, 'Community', '💬');
+      },
     );
 
     final commId = room.communityId ??

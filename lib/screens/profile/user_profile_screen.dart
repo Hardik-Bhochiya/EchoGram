@@ -371,7 +371,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                 Expanded(
                   child: _buildInfoCard(
                     title: 'LOCATION',
-                    val: user.campusOrCity.isNotEmpty ? user.campusOrCity : 'DDU, Nadiad',
+                    val: user.campusOrCity.isNotEmpty ? user.campusOrCity : 'Global',
                     icon: Icons.location_on_outlined,
                     iconColor: const Color(0xFF58A6FF),
                   ),

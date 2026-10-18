@@ -138,7 +138,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       style: const TextStyle(color: Color(0xFFF0F6FC), fontSize: 14),
                       decoration: const InputDecoration(
                         prefixIcon: Icon(Icons.email_outlined, color: Color(0xFF58A6FF), size: 18),
-                        hintText: 'hardik@ddu.ac.in or @hardik',
+                        hintText: 'user@example.com or @username',
                         hintStyle: TextStyle(color: Color(0xFF8B949E), fontSize: 13),
                         border: InputBorder.none,
                         contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 14),

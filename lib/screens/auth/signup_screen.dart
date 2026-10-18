@@ -181,13 +181,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
                       border: Border.all(color: const Color(0xFF30363D)),
                     ),
                     child: const Text(
-                      '📌 How to enable in Firebase Console:\n'
+                      '📌 How to enable Firebase Cloud Database:\n'
                       '1. Go to console.firebase.google.com\n'
-                      '2. Select your project: neartalk-app-2433c\n'
-                      '3. Go to Build > Authentication\n'
-                      '4. Click "Get Started"\n'
-                      '5. Under Sign-in method, click Email/Password > Enable > Save\n'
-                      '6. Go to Firestore Database > Create Database',
+                      '2. Select your Firebase project\n'
+                      '3. Go to Build > Authentication > Get Started\n'
+                      '4. Under Sign-in method, click Email/Password > Enable > Save\n'
+                      '5. Go to Firestore Database > Create Database (Test mode)',
                       style: TextStyle(color: Color(0xFF8B949E), fontSize: 12, height: 1.45),
                     ),
                   ),
