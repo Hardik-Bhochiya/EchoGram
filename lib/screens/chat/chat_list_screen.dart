@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../providers/community_provider.dart';
 import '../search/search_screen.dart';
 import 'chat_conversation_screen.dart';
 
@@ -159,6 +160,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   Widget build(BuildContext context) {
     final chatProvider = context.watch<ChatProvider>();
     final authProvider = context.watch<AuthProvider>();
+    final communityProvider = context.watch<CommunityProvider>();
     final currentUser = authProvider.currentUser;
 
     if (currentUser == null) {
@@ -176,6 +178,11 @@ class _ChatListScreenState extends State<ChatListScreen> {
     chatProvider.setCurrentUser(currentUser);
 
     final cleanCurrent = currentUser.username.toLowerCase().replaceAll('@', '').trim();
+    final cleanUid = currentUser.id.toLowerCase().trim();
+
+    // Sync active joined communities to chatProvider
+    final joinedCommunityIds = communityProvider.joinedCommunities.map((c) => c.id).toSet();
+    chatProvider.syncJoinedCommunities(joinedCommunityIds);
 
     // 1. Gather all active rooms (both direct and group)
     final Map<String, _UnifiedChatItem> itemMap = {};
@@ -197,28 +204,72 @@ class _ChatListScreenState extends State<ChatListScreen> {
       if (!room.isGroup) {
         String otherUser = ChatProvider.getOtherUsernameFromDmRoomId(room.id, cleanCurrent) ?? '';
         if (otherUser.isEmpty) {
-          if (room.title.startsWith('@')) {
-            otherUser = room.title;
-          } else if (room.subtitle != null && room.subtitle!.startsWith('@')) {
-            otherUser = room.subtitle!;
-          } else {
-            otherUser = room.title;
+          // Verify if current user is an explicit participant in participantIds
+          final isParticipant = room.participantIds.any((p) {
+            final cp = p.toLowerCase().replaceAll('@', '').trim();
+            return (cleanCurrent.isNotEmpty && cp == cleanCurrent) || (cleanUid.isNotEmpty && cp == cleanUid);
+          });
+          if (!isParticipant) {
+            // Strictly exclude other users' private DMs!
+            continue;
           }
+          final otherPart = room.participantIds.firstWhere(
+            (p) {
+              final cp = p.toLowerCase().replaceAll('@', '').trim();
+              return cp != cleanCurrent && (cleanUid.isEmpty || cp != cleanUid);
+            },
+            orElse: () => '',
+          );
+          if (otherPart.isNotEmpty) {
+            otherUser = otherPart;
+          }
+        }
+
+        if (otherUser.isEmpty) {
+          continue;
         }
 
         otherUser = otherUser.replaceAll('@', '').replaceAll('(', '').replaceAll(')', '').trim();
         otherUser = otherUser.replaceAll(RegExp(r'\s+chat\b', caseSensitive: false), '').trim();
 
+        if (otherUser.isEmpty || otherUser == cleanCurrent) {
+          continue;
+        }
+
         // Logical workflow: Show direct chat if friends OR if messages were exchanged!
-        final isFriend = otherUser.isNotEmpty && authProvider.areFriends(otherUser);
+        final isFriend = authProvider.areFriends(otherUser);
         final hasActiveConversation = hasLastMsg || room.lastMessage.trim().isNotEmpty;
         if (!isFriend && !hasActiveConversation) {
           continue;
         }
 
-        displayTitle = otherUser.isNotEmpty ? '@$otherUser' : room.title;
+        displayTitle = '@$otherUser';
       } else {
-        displayTitle = room.title.trim();
+        // Group / Community Room: verify actual membership before showing in Chat tab
+        final commId = room.communityId ?? (room.id.startsWith('room-') ? room.id.substring(5) : room.id);
+        final comm = communityProvider.getCommunityById(commId);
+
+        final isJoined = comm?.isJoined ?? false;
+        final isCreator = comm != null && (
+          comm.creatorId.toLowerCase().replaceAll('@', '').trim() == cleanCurrent ||
+          (cleanUid.isNotEmpty && comm.creatorId.toLowerCase().replaceAll('@', '').trim() == cleanUid)
+        );
+        final isMember = comm != null && comm.members.any((m) {
+          final cm = m.toLowerCase().replaceAll('@', '').trim();
+          return cm == cleanCurrent || (cleanUid.isNotEmpty && cm == cleanUid);
+        });
+        final inUserJoinedList = currentUser.joinedCommunityIds.contains(commId) || joinedCommunityIds.contains(commId);
+        final inParticipants = room.participantIds.any((p) {
+          final cp = p.toLowerCase().replaceAll('@', '').trim();
+          return (cleanCurrent.isNotEmpty && cp == cleanCurrent) || (cleanUid.isNotEmpty && cp == cleanUid);
+        });
+
+        // Strictly keep unjoined groups out of personal Chat list! User joins from Groups tab.
+        if (!isJoined && !isCreator && !isMember && !inUserJoinedList && !inParticipants) {
+          continue;
+        }
+
+        displayTitle = comm?.name ?? room.title.trim();
         if (displayTitle.toLowerCase().endsWith(' chat')) {
           displayTitle = displayTitle.substring(0, displayTitle.length - 5).trim();
         }

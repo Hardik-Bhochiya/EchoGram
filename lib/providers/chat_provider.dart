@@ -27,9 +27,72 @@ class ChatProvider extends ChangeNotifier {
   StreamSubscription<Map<String, dynamic>>? _seenSub;
   StreamSubscription<Map<String, dynamic>>? _frAcceptedSub;
   String? _currentUsername;
+  String? _currentUserId;
+  Set<String> _joinedCommunityIds = {};
   StreamSubscription? _userFirestoreMessagesSub;
 
-  List<ChatRoom> get rooms => _rooms;
+  List<ChatRoom> get rooms {
+    if (_currentUsername == null && _currentUserId == null) {
+      return _rooms;
+    }
+    final clean = _currentUsername ?? '';
+    final uid = _currentUserId ?? '';
+
+    return _rooms.where((room) {
+      final id = room.id.toLowerCase();
+      final t = room.title.trim().toLowerCase();
+      if (id.startsWith('room-dm-') || t == 'chat') {
+        return false;
+      }
+
+      if (!room.isGroup) {
+        if (id.startsWith('dm-')) {
+          final other = getOtherUsernameFromDmRoomId(room.id, clean);
+          if (other != null && other.isNotEmpty) {
+            return true;
+          }
+        }
+        if (room.participantIds.isNotEmpty) {
+          final inP = room.participantIds.any((p) {
+            final cp = p.toLowerCase().replaceAll('@', '').trim();
+            return (clean.isNotEmpty && cp == clean) || (uid.isNotEmpty && cp == uid);
+          });
+          if (inP) return true;
+        }
+        return false;
+      } else {
+        final commId = room.communityId ?? (room.id.startsWith('room-') ? room.id.substring(5) : room.id);
+        if (_joinedCommunityIds.contains(commId)) {
+          return true;
+        }
+        if (room.participantIds.isNotEmpty) {
+          final inP = room.participantIds.any((p) {
+            final cp = p.toLowerCase().replaceAll('@', '').trim();
+            return (clean.isNotEmpty && cp == clean) || (uid.isNotEmpty && cp == uid);
+          });
+          if (inP) return true;
+        }
+        return false;
+      }
+    }).toList();
+  }
+
+  ChatRoom? getRoomById(String roomId) {
+    try {
+      return _rooms.firstWhere((r) => r.id == roomId);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void syncJoinedCommunities(Iterable<String> communityIds) {
+    final newSet = Set<String>.from(communityIds);
+    if (_joinedCommunityIds.length != newSet.length || !_joinedCommunityIds.containsAll(newSet)) {
+      _joinedCommunityIds = newSet;
+      notifyListeners();
+    }
+  }
+
   String? getTypingUser(String roomId) => _typingUser[roomId];
   bool isTyping(String roomId) => _typingUser[roomId] != null;
   String? get currentUsername => _currentUsername;
@@ -38,17 +101,26 @@ class ChatProvider extends ChangeNotifier {
     _initChat();
   }
 
-  int get totalUnread => _rooms.fold<int>(0, (acc, r) => acc + r.unreadCount);
+  int get totalUnread => rooms.fold<int>(0, (acc, r) => acc + r.unreadCount);
 
   void setCurrentUser(User? user) {
     if (user == null) {
       _currentUsername = null;
+      _currentUserId = null;
+      _joinedCommunityIds.clear();
       _userFirestoreMessagesSub?.cancel();
+      notifyListeners();
       return;
     }
     final clean = user.username.toLowerCase().replaceAll('@', '').trim();
-    if (_currentUsername == clean && _userFirestoreMessagesSub != null) return;
+    final uid = user.id.toLowerCase().trim();
+    final bool changed = _currentUsername != clean || _currentUserId != uid;
     _currentUsername = clean;
+    _currentUserId = uid;
+    _joinedCommunityIds.addAll(user.joinedCommunityIds);
+    if (changed) {
+      notifyListeners();
+    }
     _initUserFirestoreSync(clean);
   }
 
@@ -132,7 +204,7 @@ class ChatProvider extends ChangeNotifier {
           lastMessageTime: msg.timestamp,
           unreadCount: msg.isMine ? 0 : 1,
           isOnline: true,
-          participantIds: [msg.senderId],
+          participantIds: [msg.senderId, _currentUserId ?? _currentUsername ?? ''].where((p) => p.isNotEmpty).toList(),
         );
         _rooms.insert(0, newRoom);
         LocalStoreService().addOrUpdateRoom(newRoom);
@@ -401,7 +473,7 @@ class ChatProvider extends ChangeNotifier {
           lastMessageTime: DateTime.now(),
           unreadCount: 0,
           isOnline: true,
-          participantIds: ['user-hardik'],
+          participantIds: [if (_currentUsername != null) _currentUsername!, if (_currentUserId != null) _currentUserId!],
         );
         _rooms.insert(0, newRoom);
         LocalStoreService().addOrUpdateRoom(newRoom);

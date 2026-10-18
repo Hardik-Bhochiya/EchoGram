@@ -35,10 +35,10 @@ class AuthProvider extends ChangeNotifier {
   StreamSubscription? _firestoreOutgoingFrSub;
   StreamSubscription? _firestoreFriendshipsSub;
 
-  List<FriendRequest> _incomingRequests = [];
-  List<FriendRequest> _outgoingRequests = [];
-  List<User> _friendsList = [];
-  Set<String> _friendUsernamesSet = {};
+  final List<FriendRequest> _incomingRequests = [];
+  final List<FriendRequest> _outgoingRequests = [];
+  final List<User> _friendsList = [];
+  final Set<String> _friendUsernamesSet = {};
 
   User? get currentUser => _currentUser;
   bool get isAuthenticated => _isAuthenticated;

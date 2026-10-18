@@ -51,8 +51,25 @@ class CommunityProvider extends ChangeNotifier {
       _activeUserId = cleanId;
       _activeUsername = cleanName;
       _activeUserIdentifier = newIdentifier;
+      _recalculateJoinedStatus();
       refreshCommunities(userIdentifier: _activeUserIdentifier);
     }
+  }
+
+  void _recalculateJoinedStatus() {
+    final cleanUser = (_activeUserIdentifier ?? '').toLowerCase().replaceAll('@', '').trim();
+    for (int i = 0; i < _communities.length; i++) {
+      final c = _communities[i];
+      final cleanCreator = c.creatorId.toLowerCase().replaceAll('@', '').trim();
+      final isCreator = (_activeUserId != null && _activeUserId!.isNotEmpty && cleanCreator == _activeUserId) ||
+          (_activeUsername != null && _activeUsername!.isNotEmpty && cleanCreator == _activeUsername);
+      final isMember = (cleanUser.isNotEmpty && c.members.any((m) => m.toLowerCase().replaceAll('@', '').trim() == cleanUser)) ||
+          (_activeUserId != null && _activeUserId!.isNotEmpty && c.members.any((m) => m.toLowerCase().replaceAll('@', '').trim() == _activeUserId)) ||
+          (_activeUsername != null && _activeUsername!.isNotEmpty && c.members.any((m) => m.toLowerCase().replaceAll('@', '').trim() == _activeUsername));
+      final bool isJoined = isCreator || isMember;
+      _communities[i] = c.copyWith(isJoined: isJoined);
+    }
+    notifyListeners();
   }
 
   void _initSocketListener() {
@@ -235,9 +252,9 @@ class CommunityProvider extends ChangeNotifier {
             (_activeUserId != null && _activeUserId!.isNotEmpty && rc.members.any((m) => m.toLowerCase().replaceAll('@', '').trim() == _activeUserId)) ||
             (_activeUsername != null && _activeUsername!.isNotEmpty && rc.members.any((m) => m.toLowerCase().replaceAll('@', '').trim() == _activeUsername));
 
-        // Join status is determined dynamically: backend normalization, creator ownership, or explicit membership.
-        // Avoid sticky local wasJoined so unjoined communities correctly show the 'Join' button.
-        final bool isJoined = rc.isJoined || isCreator || isMember;
+        // Join status is determined dynamically: creator ownership or explicit membership.
+        // Never bleed sticky local wasJoined so unjoined communities correctly show the 'Join' button.
+        final bool isJoined = isCreator || isMember;
 
         final updated = rc.copyWith(isJoined: isJoined);
         map[rc.id] = updated;

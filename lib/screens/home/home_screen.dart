@@ -596,22 +596,20 @@ class HomeScreen extends StatelessWidget {
                   final cleanCurrent = (user?.username ?? '').toLowerCase().replaceAll('@', '').trim();
                   String displayTitle = room.name;
                   if (!room.isGroup) {
-                    if (room.id.startsWith('dm-')) {
-                      final parts = room.id.substring(3).split('_');
-                      if (parts.length == 2) {
-                        final p1 = parts[0].toLowerCase().trim();
-                        final p2 = parts[1].toLowerCase().trim();
-                        final other = p1 == cleanCurrent ? p2 : (p2 == cleanCurrent ? p1 : (p1.isNotEmpty ? p1 : p2));
-                        if (other.isNotEmpty) {
-                          displayTitle = '@$other';
-                        }
-                      }
-                    } else if (room.subtitle != null && room.subtitle!.startsWith('@')) {
-                      displayTitle = room.subtitle!;
-                    } else if (room.title.startsWith('@')) {
+                    final other = ChatProvider.getOtherUsernameFromDmRoomId(room.id, cleanCurrent);
+                    if (other != null && other.isNotEmpty) {
+                      displayTitle = '@$other';
+                    } else if (room.title.startsWith('@') && room.title.toLowerCase() != '@$cleanCurrent') {
                       displayTitle = room.title;
+                    } else if (room.subtitle != null && room.subtitle!.startsWith('@') && room.subtitle!.toLowerCase() != '@$cleanCurrent') {
+                      displayTitle = room.subtitle!;
                     } else {
                       displayTitle = '@${room.name.toLowerCase().replaceAll(' ', '')}';
+                    }
+                  } else {
+                    displayTitle = room.name.trim();
+                    if (displayTitle.toLowerCase().endsWith(' chat')) {
+                      displayTitle = displayTitle.substring(0, displayTitle.length - 5).trim();
                     }
                   }
 

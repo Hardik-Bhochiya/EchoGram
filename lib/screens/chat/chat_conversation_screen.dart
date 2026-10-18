@@ -238,7 +238,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     final chatProvider = context.watch<ChatProvider>();
     final communityProvider = context.watch<CommunityProvider>();
 
-    final room = chatProvider.rooms.firstWhere(
+    final room = chatProvider.getRoomById(widget.roomId) ?? chatProvider.rooms.firstWhere(
       (r) => r.id == widget.roomId,
       orElse: () {
         if (widget.roomId.startsWith('dm-')) {
