@@ -125,9 +125,59 @@ class ChatProvider extends ChangeNotifier {
   }
 
   void _initUserFirestoreSync(String myUsername) {
+    if (Firebase.apps.isEmpty) return;
     _userFirestoreMessagesSub?.cancel();
-    // Bypassed: Real-time messaging uses local Socket.IO and MongoDB.
-    return;
+
+    final cleanMy = myUsername.toLowerCase().replaceAll('@', '').trim();
+    if (cleanMy.isEmpty) return;
+
+    try {
+      _userFirestoreMessagesSub = FirebaseFirestore.instance
+          .collection('chatRooms')
+          .where('participantUsernames', arrayContains: cleanMy)
+          .snapshots()
+          .listen((snapshot) {
+        for (final doc in snapshot.docs) {
+          final data = doc.data();
+          final rId = data['id'] as String? ?? doc.id;
+          final lastMsg = data['lastMessage'] as String? ?? '';
+          final lastMsgTime = (data['lastMessageTime'] as Timestamp?)?.toDate() ??
+              (data['updatedAt'] as Timestamp?)?.toDate() ??
+              DateTime.now();
+
+          final idx = _rooms.indexWhere((r) => r.id == rId);
+          if (idx != -1) {
+            _rooms[idx] = _rooms[idx].copyWith(
+              lastMessage: lastMsg,
+              lastMessageTime: lastMsgTime,
+            );
+          } else {
+            final isGroup = data['isGroup'] as bool? ?? false;
+            final title = data['title'] as String? ?? 'Chat';
+            final subtitle = data['subtitle'] as String?;
+            final room = ChatRoom(
+              id: rId,
+              title: title,
+              subtitle: subtitle,
+              avatarEmoji: data['avatarEmoji'] as String? ?? '💬',
+              isGroup: isGroup,
+              lastMessage: lastMsg,
+              lastMessageTime: lastMsgTime,
+              unreadCount: 0,
+              isOnline: true,
+              participantIds: List<String>.from(data['participantIds'] ?? []),
+            );
+            _rooms.insert(0, room);
+            LocalStoreService().addOrUpdateRoom(room);
+          }
+        }
+        notifyListeners();
+      }, onError: (e) {
+        debugPrint('[ChatProvider] User Firestore rooms stream notice: $e');
+      });
+    } catch (e) {
+      debugPrint('[ChatProvider] _initUserFirestoreSync error: $e');
+    }
   }
 
   void _initChat() {
@@ -602,9 +652,46 @@ class ChatProvider extends ChangeNotifier {
   }
 
   void _listenToRoomFirestore(String roomId) {
-    // Bypassed: Real-time messaging uses local Socket.IO and MongoDB.
-    // Disabling legacy Firestore room stream prevents old messages from polluting live chat.
-    return;
+    if (Firebase.apps.isEmpty) return;
+    _roomFirestoreSubs[roomId]?.cancel();
+
+    try {
+      _roomFirestoreSubs[roomId] = FirebaseFirestore.instance
+          .collection('messages')
+          .where('roomId', isEqualTo: roomId)
+          .snapshots()
+          .listen((snapshot) {
+        if (snapshot.docs.isEmpty) return;
+        bool hasNew = false;
+        if (!_messages.containsKey(roomId)) {
+          _messages[roomId] = [];
+        }
+
+        for (final doc in snapshot.docs) {
+          final data = doc.data();
+          try {
+            final msg = ChatMessage.fromJson(data);
+            final existingIdx = _messages[roomId]!.indexWhere((m) => m.id == msg.id);
+            if (existingIdx != -1) {
+              _messages[roomId]![existingIdx] = msg;
+            } else {
+              _messages[roomId]!.add(msg);
+              hasNew = true;
+            }
+            LocalStoreService().addMessage(msg);
+          } catch (_) {}
+        }
+
+        if (hasNew) {
+          _messages[roomId]!.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+          notifyListeners();
+        }
+      }, onError: (e) {
+        debugPrint('[ChatProvider] Firestore room stream error: $e');
+      });
+    } catch (e) {
+      debugPrint('[ChatProvider] _listenToRoomFirestore error: $e');
+    }
   }
 
   void leaveRoom(String roomId, String userName) {
@@ -882,6 +969,13 @@ class ChatProvider extends ChangeNotifier {
           ...newMsg.toJson(),
           'createdAt': FieldValue.serverTimestamp(),
         });
+
+        FirebaseFirestore.instance.collection('chatRooms').doc(roomId).set({
+          'id': roomId,
+          'lastMessage': content,
+          'lastMessageTime': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
       } catch (e) {
         debugPrint('[ChatProvider] Firestore sendMessage notice: $e');
       }

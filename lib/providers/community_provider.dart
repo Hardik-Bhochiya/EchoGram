@@ -186,10 +186,53 @@ class CommunityProvider extends ChangeNotifier {
   }
 
   void _initFirestoreListener() {
+    if (Firebase.apps.isEmpty) return;
     _firestoreSub?.cancel();
-    // Bypassed: Communities sync directly with local MongoDB via ApiService.
-    // Disabling Firestore stream prevents ghost communities (ABC, APC, Nadiad Hustlers) from reappearing.
-    return;
+
+    try {
+      _firestoreSub = FirebaseFirestore.instance
+          .collection('communities')
+          .snapshots()
+          .listen((snapshot) {
+        if (snapshot.docs.isEmpty) return;
+        final cleanUser = (_activeUserIdentifier ?? '').toLowerCase().replaceAll('@', '').trim();
+
+        for (final doc in snapshot.docs) {
+          final data = doc.data();
+          try {
+            final c = Community.fromJson(data);
+            final cName = c.name.toLowerCase();
+            if (cName == 'abc' || cName == 'apc' || cName.contains('hustlers') || cName.contains('canteen') || cName.contains('robotics')) {
+              continue;
+            }
+
+            final cleanCreator = c.creatorId.toLowerCase().replaceAll('@', '').trim();
+            final isCreator = (_activeUserId != null && _activeUserId!.isNotEmpty && cleanCreator == _activeUserId) ||
+                (_activeUsername != null && _activeUsername!.isNotEmpty && cleanCreator == _activeUsername);
+            final isMember = (cleanUser.isNotEmpty && c.members.any((m) => m.toLowerCase().replaceAll('@', '').trim() == cleanUser)) ||
+                (_activeUserId != null && _activeUserId!.isNotEmpty && c.members.any((m) => m.toLowerCase().replaceAll('@', '').trim() == _activeUserId)) ||
+                (_activeUsername != null && _activeUsername!.isNotEmpty && c.members.any((m) => m.toLowerCase().replaceAll('@', '').trim() == _activeUsername));
+            final bool isJoined = isCreator || isMember;
+
+            final updated = c.copyWith(isJoined: isJoined);
+            final existingIdx = _communities.indexWhere((x) => x.id == updated.id);
+            if (existingIdx != -1) {
+              _communities[existingIdx] = updated;
+            } else {
+              _communities.insert(0, updated);
+            }
+            LocalStoreService().addCommunity(updated);
+            LocalStoreService().addLocation(updated.regionName);
+          } catch (_) {}
+        }
+        _syncRegions();
+        notifyListeners();
+      }, onError: (e) {
+        debugPrint('[CommunityProvider] Firestore stream error: $e');
+      });
+    } catch (e) {
+      debugPrint('[CommunityProvider] _initFirestoreListener error: $e');
+    }
   }
 
   void addLocation(String location) {
@@ -272,7 +315,51 @@ class CommunityProvider extends ChangeNotifier {
         _syncRegions();
         notifyListeners();
       }
-    } catch (_) {}
+    } catch (_) {
+      // Fallback: If local backend is unreachable (e.g. on mobile data), fetch from Cloud Firestore!
+      if (Firebase.apps.isNotEmpty) {
+        try {
+          final snapshot = await FirebaseFirestore.instance.collection('communities').get();
+          final cleanUser = (_activeUserIdentifier ?? '').toLowerCase().replaceAll('@', '').trim();
+          bool hasChanges = false;
+          for (final doc in snapshot.docs) {
+            try {
+              final rc = Community.fromJson(doc.data());
+              final cName = rc.name.toLowerCase();
+              if (cName == 'abc' || cName == 'apc' || cName.contains('hustlers') || cName.contains('canteen') || cName.contains('robotics')) {
+                continue;
+              }
+
+              final cleanCreator = rc.creatorId.toLowerCase().replaceAll('@', '').trim();
+              final isCreator = (_activeUserId != null && _activeUserId!.isNotEmpty && cleanCreator == _activeUserId) ||
+                  (_activeUsername != null && _activeUsername!.isNotEmpty && cleanCreator == _activeUsername);
+              final isMember = (cleanUser.isNotEmpty && rc.members.any((m) => m.toLowerCase().replaceAll('@', '').trim() == cleanUser)) ||
+                  (_activeUserId != null && _activeUserId!.isNotEmpty && rc.members.any((m) => m.toLowerCase().replaceAll('@', '').trim() == _activeUserId)) ||
+                  (_activeUsername != null && _activeUsername!.isNotEmpty && rc.members.any((m) => m.toLowerCase().replaceAll('@', '').trim() == _activeUsername));
+              final bool isJoined = isCreator || isMember;
+
+              final updated = rc.copyWith(isJoined: isJoined);
+              final existingIdx = _communities.indexWhere((x) => x.id == updated.id);
+              if (existingIdx != -1) {
+                if (_communities[existingIdx].memberCount != updated.memberCount || _communities[existingIdx].isJoined != isJoined) {
+                  _communities[existingIdx] = updated;
+                  hasChanges = true;
+                }
+              } else {
+                _communities.insert(0, updated);
+                hasChanges = true;
+              }
+              LocalStoreService().addCommunity(updated);
+              LocalStoreService().addLocation(updated.regionName);
+            } catch (_) {}
+          }
+          if (hasChanges) {
+            _syncRegions();
+            notifyListeners();
+          }
+        } catch (_) {}
+      }
+    }
   }
 
   void selectRegion(Region region) {
