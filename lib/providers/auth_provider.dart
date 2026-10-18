@@ -440,20 +440,7 @@ class AuthProvider extends ChangeNotifier {
     }
     notifyListeners();
 
-    // 3. Update Cloud Firestore (if Firebase is active)
-    try {
-      await _authService.updateProfile(
-        uid: currentUid,
-        name: trimmedName,
-        campusOrCity: trimmedLoc,
-        majorOrBio: trimmedBio,
-        avatarUrl: newAvatar,
-      );
-    } catch (e) {
-      debugPrint('[AuthProvider] Firestore updateProfile notice: $e');
-    }
-
-    // 4. Update Backend Database (MongoDB & in-memory store)
+    // 3. Update Backend Database (MongoDB & in-memory store)
     try {
       final remoteUser = await ApiService().updateProfile(
         id: currentUid,
@@ -480,6 +467,21 @@ class AuthProvider extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('[AuthProvider] Backend updateProfile notice: $e');
+    }
+
+    // 4. Update Cloud Firestore (if Firebase is active) with safe timeout
+    if (_authService.isFirebaseInitialized) {
+      try {
+        await _authService.updateProfile(
+          uid: currentUid,
+          name: trimmedName,
+          campusOrCity: trimmedLoc,
+          majorOrBio: trimmedBio,
+          avatarUrl: newAvatar,
+        ).timeout(const Duration(seconds: 2));
+      } catch (e) {
+        debugPrint('[AuthProvider] Firestore updateProfile notice: $e');
+      }
     }
 
     notifyListeners();

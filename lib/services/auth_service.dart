@@ -126,7 +126,7 @@ class AuthService {
           'createdAt': FieldValue.serverTimestamp(),
         });
 
-        await batch.commit();
+        await batch.commit().timeout(const Duration(seconds: 3));
       } catch (firestoreErr) {
         // If Firestore rules are locked, still return the created user profile
         debugPrint('Firestore profile creation warning: $firestoreErr');
@@ -307,10 +307,16 @@ class AuthService {
     }
 
     try {
-      await _firestore!.collection('users').doc(uid).set(updates, SetOptions(merge: true));
+      if (_firestore != null) {
+        await _firestore!
+            .collection('users')
+            .doc(uid)
+            .set(updates, SetOptions(merge: true))
+            .timeout(const Duration(seconds: 2));
+      }
       if (name != null && _auth?.currentUser != null) {
         try {
-          await _auth!.currentUser!.updateDisplayName(name.trim());
+          await _auth!.currentUser!.updateDisplayName(name.trim()).timeout(const Duration(seconds: 2));
         } catch (_) {}
       }
     } catch (e) {
